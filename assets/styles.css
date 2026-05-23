@@ -341,22 +341,31 @@ body {
 
 @media (max-width: 768px) {
   .library-view {
-    height: auto;
-    min-height: 100vh;
-    overflow-y: auto;
+    height: 100vh;
+    overflow: hidden;
     padding: 12px;
   }
   .library-container {
-    max-height: none;
-    height: auto;
+    max-height: 100%;
+    height: 100%;
   }
   .library-grid {
     display: flex;
     flex-direction: column;
-    height: auto;
+    height: calc(100% - 60px); /* Laisse la place pour le header */
+    overflow-y: auto;
+    gap: 12px;
+  }
+  .card {
+    flex-shrink: 0; /* Évite que les cartes s'effondrent */
   }
   .card-shelf {
-    max-height: 300px;
+    max-height: 350px;
+    min-height: 250px;
+  }
+  .presets-row, .profile-actions {
+    flex-direction: column; /* Boutons l'un sous l'autre sur petit écran */
+    gap: 6px;
   }
 }
 
@@ -705,8 +714,57 @@ input[type="range"]::-webkit-slider-thumb {
     right: 0;
     width: 100vw;
     border-radius: 16px 16px 0 0;
-    max-height: 70vh;
+    max-height: 85vh;
     box-shadow: 0 -5px 25px rgba(0, 0, 0, 0.15);
+    display: flex;
+    flex-direction: column;
+  }
+  .panel-body {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 40px;
+  }
+
+  /* --- RECADRAGE DE L'EN-TÊTE MOBILE --- */
+  .reader-header {
+    padding: 0 8px !important;
+    display: grid !important;
+    grid-template-columns: auto 1fr auto !important; /* Aligne strictement gauche, centre et droite */
+    gap: 8px !important;
+    align-items: center !important;
+  }
+  .reader-header-left {
+    display: flex;
+    align-items: center;
+  }
+  .reader-header-center {
+    display: flex;
+    justify-content: center;
+    min-width: 0 !important; /* Force le conteneur du milieu à respecter les limites */
+    padding: 0 4px;
+  }
+  .reader-book-title {
+    max-width: 100% !important;
+    font-size: 0.75rem !important;
+    text-align: center;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important; /* Transforme le surplus du titre en "..." */
+    display: block !important;
+  }
+  .reader-header-right {
+    display: flex !important;
+    gap: 4px !important;
+    flex-shrink: 0 !important; /* Interdit au bloc de boutons de se rétrécir */
+  }
+  .reader-header-right .btn {
+    padding: 6px 8px !important;
+    font-size: 0.75rem !important;
+    white-space: nowrap !important;
+  }
+  #btnBackToLibrary {
+    padding: 6px 8px !important;
+    font-size: 0.75rem !important;
   }
 }
 

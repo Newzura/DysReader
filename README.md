@@ -76,3 +76,10 @@ Pour cloner et lancer l'application en local sur votre machine avec un serveur d
    ```bash
    npm run build
    ```
+
+   ---
+
+## 📝 Suivi des modifications
+
+* [x] **Correction des problèmes d'affichage sur appareil portable** (Ajustement de l'en-tête immersif et des marges adaptatives de Foliate-JS).
+

@@ -61,7 +61,7 @@
         </section>
 
         <section class="card card-profile">
-          <h2>Profils de Lecture</h2>
+          <h2>Profils de Lecture & Exports</h2>
           <div class="presets-row">
             <button id="presetComfort" class="btn">Preset confort</button>
             <button id="presetAssist" class="btn">Preset assisté</button>
@@ -73,6 +73,8 @@
               <input id="importStateInput" type="file" accept=".json" style="display:none;">
             </label>
           </div>
+          <!-- Bouton principal d'exportation PDF Haute-Fidélité Dys -->
+          <button id="convertPdfBtn" class="btn btn-primary" style="margin-top: 12px; width: 100%;" type="button">📄 Convertir un EPUB en PDF Dys</button>
         </section>
       </main>
     </div>
@@ -222,10 +224,7 @@
           <button id="resetColorsBtn" class="btn" style="width:100%; margin-top:10px;" type="button">Réinitialiser</button>
         </details>
 
-        <div class="action-grid-1">
-          <button id="recolorBtn" class="btn" type="button">Forcer la colorisation</button>
-          <button id="exportEpubBtn" class="btn" type="button">Exporter en EPUB colorisé</button>
-        </div>
+        <!-- Les boutons d'exportation obsolètes ont été retirés du menu de lecture -->
       </div>
     </div>
 
@@ -263,6 +262,35 @@
         </div>
       </div>
     </div>
+
+<!-- Modal flottant de conversion PDF Haute-Fidélité -->
+  <div id="pdfModal" class="floating-panel hidden" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 420px; z-index: 2000; box-shadow: 0 10px 40px rgba(0,0,0,0.25);">
+    <div class="panel-header">
+      <h3>Convertir un EPUB en PDF Dys</h3>
+      <button id="closePdfModal" class="close-panel-btn" type="button">✕</button>
+    </div>
+    <div class="panel-body" style="display: flex; flex-direction: column; gap: 14px; padding: 16px;">
+      <p style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; margin: 0;">Sélectionnez un livre de votre bibliothèque locale ou chargez-en un nouveau depuis votre disque pour générer un fichier PDF haute-fidélité colorisé avec vos réglages de lecture actifs.</p>
+      
+      <!-- Option 1: Bibliothèque locale -->
+      <div class="control">
+        <label for="pdfSelectBook" style="font-size: 0.75rem; font-weight: bold; margin-bottom: 4px; display: block;">1. Choisir un livre de la bibliothèque</label>
+        <select id="pdfSelectBook" style="width: 100%; margin-bottom: 8px;"></select>
+        <button id="btnConvertLocalPdf" class="btn btn-primary" style="width: 100%;" type="button">Convertir le livre sélectionné</button>
+      </div>
+      
+      <div style="text-align: center; font-size: 0.75rem; color: var(--text-muted); border-bottom: 1px solid var(--border-color); line-height: 0.1em; margin: 15px 0;"><span style="background: var(--panel-bg); padding: 0 10px;">OU</span></div>
+      
+      <!-- Option 2: Depuis le disque -->
+      <div class="control">
+        <label style="font-size: 0.75rem; font-weight: bold; margin-bottom: 6px; display: block;">2. Charger un livre depuis le disque</label>
+        <label class="btn file-btn-label" style="display: flex; width: 100%; text-align: center; justify-content: center; cursor: pointer; border: 1px dashed var(--border-color); background: var(--bg-color);">
+          📁 Choisir un fichier EPUB...
+          <input id="pdfFileInput" type="file" accept=".epub,application/epub+zip" style="display:none;">
+        </label>
+      </div>
+    </div>
+  </div>
 
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <!-- Chargement du module Foliate-JS directement en HTML pour contourner le compilateur de Vite -->

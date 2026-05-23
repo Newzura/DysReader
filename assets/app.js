@@ -596,8 +596,7 @@ function injectIframeStyles(doc, opts, isIllustrationPage = false) {
       color: inherit !important;
     }
 
-    /* Style du bloc de lecture TTS */    
-    .tts-reading-block {
+    /* Style du bloc de lecture TTS */    .tts-reading-block {
       background-color: #fef08a !important; 
       color: #000000 !important;
       border-radius: 4px;
@@ -648,6 +647,14 @@ function injectIframeStyles(doc, opts, isIllustrationPage = false) {
         transition: all 0.15s ease;
       }
     ` : ''}
+
+    /* Force la conservation des couleurs d'annotations DYS lors des exports PDF */
+    @media print {
+      body, body * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+    }
   `;
 }
 
@@ -720,15 +727,6 @@ function initTTS() {
     const premiumGroup = document.createElement('optgroup');
     premiumGroup.label = "🌟 Premium (Neural Local)";
     
-    // Voix d'origine Supertonic 3
-    const SUPERTONIC_VOICES = [
-      { id: "F2", name: "F2 (Sarah - Expressive, Féminine)", lang: "fr" },
-      { id: "M3", name: "M3 (Daniel - Claire, Masculine)", lang: "fr" },
-      { id: "F1", name: "F1 (Sophia - Claire, Féminine)", lang: "fr" },
-      { id: "F3", name: "F3 (Aria - Douce, Féminine)", lang: "en" },
-      { id: "M1", name: "M1 (Arthur - Claire, Masculine)", lang: "en" }
-    ];
-
     SUPERTONIC_VOICES.forEach(v => {
       const opt = document.createElement('option');
       opt.value = v.id;
@@ -1013,7 +1011,9 @@ async function pregenerateNextBlock(nextIndex, speed) {
 
 function playRawFloat32Audio(float32Array, sampleRate) {
   try {
-    currentAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+    if (!currentAudioContext || currentAudioContext.state === 'closed') {
+      currentAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+    }
     const buffer = currentAudioContext.createBuffer(1, float32Array.length, sampleRate);
     buffer.copyToChannel(float32Array, 0);
 
@@ -1358,14 +1358,47 @@ function initUI() {
   document.getElementById('presetComfort').addEventListener('click', applyPresetComfort);
   document.getElementById('presetAssist').addEventListener('click', applyPresetAssist);
 
-  document.getElementById('recolorBtn').addEventListener('click', () => {
-    if (activeBody) {
-      applyAnnotationToDOM(activeBody, settings);
-    }
+  // Liaison des boutons de contrôle du Modal PDF de la page d'accueil
+  document.getElementById('convertPdfBtn').addEventListener('click', () => {
+    document.getElementById('pdfModal').classList.remove('hidden');
+    populatePdfModalSelect();
   });
 
-  document.getElementById('exportStateBtn').addEventListener('click', exportConfigurationJson);
-  document.getElementById('importStateInput').addEventListener('change', importConfigurationJson);
+  document.getElementById('closePdfModal').addEventListener('click', () => {
+    document.getElementById('pdfModal').classList.add('hidden');
+  });
+
+  document.getElementById('btnConvertLocalPdf').addEventListener('click', () => {
+    const select = document.getElementById('pdfSelectBook');
+    const bookId = select.value;
+    if (!bookId) {
+      alert("Veuillez sélectionner un livre.");
+      return;
+    }
+    getBookFromLocalDb(bookId).then(record => {
+      if (record) {
+        exportBookToPdf(record.data, record.title || record.name);
+      }
+    });
+  });
+
+  document.getElementById('pdfFileInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(evt) {
+      const arrayBuffer = evt.target.result;
+      exportBookToPdf(arrayBuffer, file.name.replace(/\.[^/.]+$/, "")); // Enlève l'extension
+    };
+    reader.readAsArrayBuffer(file);
+  });
+
+  const exportStateBtn = document.getElementById('exportStateBtn');
+  if (exportStateBtn) exportStateBtn.addEventListener('click', exportConfigurationJson);
+
+  const importStateInput = document.getElementById('importStateInput');
+  if (importStateInput) importStateInput.addEventListener('change', importConfigurationJson);
 
   const footerPrev = document.getElementById('btnFooterPrev');
   const footerNext = document.getElementById('btnFooterNext');
@@ -1487,7 +1520,8 @@ function applyAllSettings() {
   view.setAttribute('flow', settings.mode === 'scrolled' ? 'scrolled' : 'paginated');
   view.setAttribute('max-inline-size', `${settings.columnWidth * 10}px`);
   view.setAttribute('gap', '5%');
-  view.setAttribute('margin', '60px');
+  const isMobile = window.innerWidth <= 600;
+view.setAttribute('margin', isMobile ? '20px' : '60px');
 
   const leftOverlay = document.getElementById('navOverlayLeft');
   const rightOverlay = document.getElementById('navOverlayRight');
@@ -1628,7 +1662,8 @@ async function loadBookFromArrayBuffer(arrayBuffer, filename, savedPosition = nu
   view.setAttribute('flow', currentFlow);
   view.setAttribute('max-inline-size', `${settings.columnWidth * 10}px`);
   view.setAttribute('gap', '5%');
-  view.setAttribute('margin', '60px'); 
+  const isMobile = window.innerWidth <= 600;
+  view.setAttribute('margin', isMobile ? '20px' : '60px'); 
 
   viewerShell.appendChild(view);
 
@@ -1815,6 +1850,159 @@ function exportConfigurationJson() {
   downloadAnchor.click();
 }
 
+// Remplit la liste déroulante du modal de conversion PDF avec les livres d'IndexedDB
+function populatePdfModalSelect() {
+  const select = document.getElementById('pdfSelectBook');
+  if (!select || !db) return;
+  select.innerHTML = '<option value="">-- Sélectionner un livre --</option>';
+
+  const transaction = db.transaction(["books"], "readonly");
+  const store = transaction.objectStore("books");
+
+  store.openCursor().onsuccess = (event) => {
+    const cursor = event.target.result;
+    if (cursor) {
+      const record = cursor.value;
+      const opt = document.createElement('option');
+      opt.value = record.id;
+      opt.textContent = record.title || record.name;
+      select.appendChild(opt);
+      cursor.continue();
+    }
+  };
+}
+
+// Décompresse l'EPUB, applique la coloration DYS sur tous les chapitres, et lance l'impression virtuelle PDF
+async function exportBookToPdf(arrayBuffer, title) {
+  try {
+    alert(`Début de la conversion en PDF pour "${title}". Veuillez patienter pendant l'assemblage de tous les chapitres...`);
+
+    if (!window.JSZip) throw new Error("JSZip non disponible.");
+    const zip = await JSZip.loadAsync(arrayBuffer);
+    const htmlEntries = [];
+
+    // Récupère l'ensemble des fichiers HTML de l'EPUB
+    zip.forEach((path, entry) => {
+      if (path.endsWith('.html') || path.endsWith('.xhtml')) {
+        htmlEntries.push(entry);
+      }
+    });
+
+    // Tri des chapitres pour conserver l'ordre de lecture
+    htmlEntries.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+
+    let combinedHtml = "";
+
+    // Colorisation et concaténation séquentielle de chaque chapitre
+    for (const entry of htmlEntries) {
+      const rawContent = await entry.async('string');
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(rawContent, 'text/html');
+      
+      applyAnnotationToDOM(doc.body, settings);
+      
+      combinedHtml += `<section class="pdf-chapter" style="page-break-after: always; break-after: page;">${doc.body.innerHTML}</section>`;
+    }
+
+    // Récupération des couleurs du thème actif
+    let bg, text, silentColor;
+    if (settings.theme === 'cream') {
+      bg = '#fdf6e3'; text = '#586e75'; silentColor = 'rgba(88,110,117,0.45)';
+    } else if (settings.theme === 'soft') {
+      bg = '#eef2f7'; text = '#2c3e50'; silentColor = 'rgba(44,62,80,0.45)';
+    } else if (settings.theme === 'dark') {
+      bg = '#1a1a1a'; text = '#e0e0e0'; silentColor = 'rgba(224,224,224,0.4)';
+    } else if (settings.theme === 'kavita') {
+      bg = '#F1E4D5'; text = '#111111'; silentColor = 'rgba(17,17,17,0.4)';
+    } else {
+      bg = '#ffffff'; text = '#111111'; silentColor = 'rgba(17,17,17,0.4)';
+    }
+
+    const font = settings.font;
+    const size = settings.fontSize + '%';
+    const height = (settings.lineHeight / 100);
+    const spacing = (settings.letterSpacing / 100) + 'em';
+
+    // Composition du document d'impression
+    const printDocumentHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>${title}</title>
+        <style>
+          @font-face {
+            font-family: 'Dyslexie';
+            src: url('/DysReader/assets/Fonts/dyslexie-regular.ttf') format('truetype');
+          }
+          body {
+            font-family: ${font} !important;
+            font-size: ${size} !important;
+            line-height: ${height} !important;
+            letter-spacing: ${spacing} !important;
+            color: ${text} !important;
+            background-color: ${bg} !important;
+            padding: 40px !important;
+            max-width: ${settings.columnWidth}ch !important;
+            margin: 0 auto !important;
+          }
+          .syl-1 { color: ${settings.colorSyl1} !important; font-weight: 500; }
+          .syl-2 { color: ${settings.colorSyl2} !important; font-weight: 500; }
+          .digraph {
+            text-decoration: underline;
+            text-decoration-color: ${settings.colorDigraph};
+            text-decoration-thickness: 2px;
+          }
+          .silent { color: ${settings.colorSilent || silentColor} !important; opacity: 0.6; }
+          
+          @media print {
+            body, body * {
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            body {
+              background-color: ${bg} !important;
+              color: ${text} !important;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <h1 style="text-align: center; margin-top: 40px; margin-bottom: 60px; font-family: ${font};">${title}</h1>
+        ${combinedHtml}
+      </body>
+      </html>
+    `;
+
+    // Création d'une Iframe temporaire pour isoler l'impression
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+
+    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+    iframeDoc.open();
+    iframeDoc.write(printDocumentHtml);
+    iframeDoc.close();
+
+    // Lancement de l'imprimante virtuelle
+    iframe.contentWindow.focus();
+    setTimeout(() => {
+      iframe.contentWindow.print();
+      document.body.removeChild(iframe); // Nettoyage de l'Iframe après appel
+      document.getElementById('pdfModal').classList.add('hidden'); // Ferme le modal après génération
+    }, 1500);
+
+  } catch (err) {
+    console.error("Échec de la conversion en PDF", err);
+    alert("Erreur lors de la génération du document PDF.");
+  }
+}
+
 // Export EPUB
 async function exportColorizedEpub(file, opts) {
   if (!window.JSZip) throw new Error("JSZip non disponible.");
@@ -1853,14 +2041,17 @@ async function exportColorizedEpub(file, opts) {
   URL.revokeObjectURL(downloadUrl);
 }
 
-document.getElementById('exportEpubBtn').addEventListener('click', () => {
-  if (!currentBookId) return;
-  getBookFromLocalDb(currentBookId).then(record => {
-    if (!record) return;
-    const blobFile = new File([record.data], record.name);
-    return exportColorizedEpub(blobFile, settings);
+const exportEpubBtn = document.getElementById('exportEpubBtn');
+if (exportEpubBtn) {
+  exportEpubBtn.addEventListener('click', () => {
+    if (!currentBookId) return;
+    getBookFromLocalDb(currentBookId).then(record => {
+      if (!record) return;
+      const blobFile = new File([record.data], record.name);
+      return exportColorizedEpub(blobFile, settings);
+    });
   });
-});
+}
 
 function importConfigurationJson(e) {
   const file = e.target.files[0];
