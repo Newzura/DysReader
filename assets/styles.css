@@ -1,0 +1,713 @@
+/* --- START OF FILE assets/styles.css --- */
+@font-face {
+  font-family: 'Dyslexie';
+  src: url('./Fonts/dyslexie-regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Dyslexie';
+  src: url('./Fonts/dyslexie-bold.ttf') format('truetype');
+  font-weight: bold;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Dyslexie';
+  src: url('./Fonts/dyslexie-italic.ttf') format('truetype');
+  font-weight: normal;
+  font-style: italic;
+}
+@font-face {
+  font-family: 'Dyslexie';
+  src: url('./Fonts/dyslexie-bolditalic.ttf') format('truetype');
+  font-weight: bold;
+  font-style: italic;
+}
+
+:root {
+  --bg-color: #f4f6f8;
+  --panel-bg: #ffffff;
+  --text-color: #1e293b;
+  --text-muted: #64748b;
+  --border-color: #cbd5e1;
+  --primary-color: #2563eb;
+  --primary-hover: #1d4ed8;
+  --primary-bg-light: #eff6ff;
+  --font-interface: 'Atkinson Hyperlegible Next', 'Atkinson Hyperlegible', system-ui, sans-serif;
+  --border-radius: 10px;
+  --transition-speed: 0.2s;
+  --column-width-css: 72ch;
+}
+
+[data-theme="dark"] {
+  --bg-color: #0f172a;
+  --panel-bg: #1e293b;
+  --text-color: #f1f5f9;
+  --text-muted: #94a3b8;
+  --border-color: #334155;
+  --primary-color: #3b82f6;
+  --primary-hover: #60a5fa;
+  --primary-bg-light: rgba(59, 130, 246, 0.15);
+}
+
+body.ui-dys-mode {
+  --font-interface: 'OpenDyslexic', 'Atkinson Hyperlegible', sans-serif;
+  letter-spacing: 0.04em;
+  word-spacing: 0.12em;
+}
+
+body.ui-dys-mode .library-header,
+body.ui-dys-mode .card,
+body.ui-dys-mode .btn,
+body.ui-dys-mode .floating-panel,
+body.ui-dys-mode select,
+body.ui-dys-mode input {
+  font-family: var(--font-interface) !important;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-interface);
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  line-height: 1.5;
+  transition: background-color var(--transition-speed), color var(--transition-speed);
+  overflow: hidden !important; 
+  height: 100vh !important;
+  width: 100vw !important;
+}
+
+.skip-link {
+  position: absolute;
+  top: -100px;
+  left: 10px;
+  background: var(--primary-color);
+  color: white;
+  padding: 8px 16px;
+  z-index: 100;
+  border-radius: var(--border-radius);
+  text-decoration: none;
+}
+.skip-link:focus {
+  top: 10px;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.badge {
+  font-size: 0.75rem;
+  background-color: var(--primary-bg-light);
+  color: var(--primary-color);
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-weight: 500;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: var(--border-radius);
+  border: 1px solid var(--border-color);
+  background-color: var(--panel-bg);
+  color: var(--text-color);
+  cursor: pointer;
+  transition: all var(--transition-speed);
+}
+.btn:hover {
+  background-color: var(--bg-color);
+  border-color: var(--text-muted);
+}
+.btn-primary {
+  background-color: var(--primary-color);
+  color: white;
+  border-color: var(--primary-color);
+}
+.btn-primary:hover {
+  background-color: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+
+.icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.25rem;
+  color: var(--text-color);
+  padding: 4px;
+  display: flex;
+}
+
+/* ================= I. ÉCRAN BIBLIOTHÈQUE / ACCUEIL ================= */
+.library-view {
+  width: 100vw;
+  height: 100vh;
+  padding: 24px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.library-container {
+  width: 100%;
+  max-width: 960px;
+  height: 100%;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+}
+
+.library-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 12px;
+  flex-shrink: 0;
+}
+
+.library-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.library-brand .logo {
+  width: 32px;
+  height: 32px;
+  color: var(--primary-color);
+}
+
+.library-brand h1 {
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+
+.library-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  grid-template-rows: auto 1fr;
+  gap: 16px;
+  min-height: 0;
+}
+
+.card {
+  background-color: var(--panel-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.card h2 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 6px;
+  flex-shrink: 0;
+}
+
+.card-upload {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.card-profile {
+  grid-column: 1;
+  grid-row: 2;
+  gap: 10px;
+}
+
+.card-shelf {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.upload {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  border: 2px dashed var(--border-color);
+  border-radius: var(--border-radius);
+  cursor: pointer;
+  text-align: center;
+  background-color: var(--bg-color);
+  transition: border-color var(--transition-speed);
+  flex: 1;
+}
+
+.upload:hover {
+  border-color: var(--primary-color);
+}
+
+.upload-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+.upload-subtitle {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.shelf-container {
+  flex: 1;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  background-color: var(--bg-color);
+  min-height: 0;
+}
+
+.book-shelf {
+  display: flex;
+  flex-direction: column;
+}
+
+.shelf-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.8rem;
+}
+
+.shelf-item:last-child {
+  border-bottom: none;
+}
+
+.shelf-item-title {
+  font-weight: 700;
+  cursor: pointer;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--primary-color);
+}
+
+.shelf-item-title:hover {
+  text-decoration: underline;
+}
+
+.shelf-item-delete {
+  background: none;
+  border: none;
+  color: #ef4444;
+  cursor: pointer;
+  font-size: 1rem;
+  padding-left: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shelf-item-delete:hover {
+  color: #b91c1c;
+}
+
+.presets-row, .profile-actions {
+  display: flex;
+  gap: 8px;
+}
+
+@media (max-width: 768px) {
+  .library-view {
+    height: auto;
+    min-height: 100vh;
+    overflow-y: auto;
+    padding: 12px;
+  }
+  .library-container {
+    max-height: none;
+    height: auto;
+  }
+  .library-grid {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+  }
+  .card-shelf {
+    max-height: 300px;
+  }
+}
+
+/* ================= II. LECTEUR IMMERSIF ================= */
+.reader-view {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+.header-trigger-zone {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 15px;
+  z-index: 999;
+}
+
+.reader-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 60px;
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--border-color);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.reader-header-hidden {
+  transform: translateY(-100%);
+}
+
+.reader-book-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--text-color);
+  max-width: 300px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-block;
+}
+
+.reader-header-right {
+  display: flex;
+  gap: 8px;
+}
+
+.main-reader {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.viewer-shell {
+  flex: 1;
+  width: 100%;
+  position: relative;
+  min-height: 0;
+}
+
+.viewer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  max-width: var(--column-width-css, 72ch);
+  margin: 0 auto;
+}
+
+/* --- BANDES DE NAVIGATION LATÉRALES (OVERLAYS 18%) --- */
+.nav-overlay {
+  position: absolute;
+  top: 60px; /* Aligné juste sous l'en-tête */
+  bottom: 0;
+  width: 18%; /* Largeur de 18% réactive */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 98; /* Placé au-dessus du viewer (0) mais sous l'interface flottante (1010) */
+  cursor: pointer;
+  user-select: none;
+  background-color: transparent;
+  transition: background-color var(--transition-speed);
+}
+.nav-overlay-left {
+  left: 0;
+}
+.nav-overlay-right {
+  right: 0;
+}
+
+/* Effet d'overlay gris au survol (désactivé si la classe .no-hover est présente) */
+.nav-overlay:not(.no-hover):hover {
+  background-color: rgba(128, 128, 128, 0.12); /* Gris doux translucide */
+}
+
+.nav-arrow {
+  font-size: 3.5rem;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity var(--transition-speed);
+  pointer-events: none;
+}
+
+/* Affichage de la flèche uniquement s'il n'y a pas la classe .no-hover */
+.nav-overlay:not(.no-hover):hover .nav-arrow {
+  opacity: 0.7;
+}
+
+.nav-overlay.no-hover .nav-arrow {
+  display: none !important;
+}
+
+.reading-ruler {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 30px;
+  background-color: rgba(254, 240, 138, 0.25);
+  border-top: 1.5px dashed rgba(228, 145, 0, 0.5);
+  border-bottom: 1.5px dashed rgba(228, 145, 0, 0.5);
+  pointer-events: none;
+  display: none;
+  z-index: 99;
+}
+
+.reader-footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 50px;
+  border-top: 1px solid var(--border-color);
+  background-color: var(--panel-bg);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 20px;
+  font-size: 0.8rem;
+  color: var(--text-color);
+  z-index: 1000;
+  box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Masquage discret vers le bas (hors de l'écran) */
+.reader-footer-hidden {
+  transform: translateY(100%);
+}
+
+.btn-footer {
+  padding: 6px 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border-radius: 6px;
+}
+
+.location-info {
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+/* ================= III. FENÊTRES FLOTTANTES ================= */
+.floating-panel {
+  position: fixed;
+  top: 70px;
+  right: 20px;
+  width: 380px;
+  max-height: calc(100vh - 120px);
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+  z-index: 1010;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: slideIn 0.2s ease-out;
+}
+.floating-panel.hidden {
+  display: none !important;
+}
+
+.panel-header {
+  padding: 16px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.panel-header h3 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-color);
+}
+.close-panel-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.1rem;
+  color: var(--text-muted);
+}
+.close-panel-btn:hover {
+  color: var(--text-color);
+}
+
+.panel-body {
+  padding: 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.control {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.control label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  display: flex;
+  justify-content: space-between;
+}
+.control label span {
+  font-family: monospace;
+  color: var(--primary-color);
+}
+select {
+  padding: 8px;
+  border-radius: var(--border-radius);
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  font-size: 0.85rem;
+  outline: none;
+}
+
+.slider-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border-color);
+  outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--primary-color);
+  cursor: pointer;
+  border: 2px solid var(--panel-bg);
+}
+
+.toggle-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.toggle-list label {
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.palette-details {
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  padding: 8px;
+}
+.palette-details summary {
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.color-picker-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 10px;
+}
+.color-picker-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.color-picker-item label {
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.color-picker-item input[type="color"] {
+  -webkit-appearance: none;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  width: 100%;
+  height: 32px;
+  cursor: pointer;
+  background: none;
+}
+
+.toc-list {
+  max-height: calc(100vh - 200px);
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 600px) {
+  .floating-panel {
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100vw;
+    border-radius: 16px 16px 0 0;
+    max-height: 70vh;
+    box-shadow: 0 -5px 25px rgba(0, 0, 0, 0.15);
+  }
+}
+
+/* --- END OF FILE assets/styles.css --- */

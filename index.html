@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="fr" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DysReader EPUB</title>
+  <meta name="description" content="Lecteur EPUB ultra-moderne basé sur Foliate-JS avec aides visuelles dyslexiques.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;500;700&family=Lexend:wght@400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.cdnfonts.com/css/opendyslexic" rel="stylesheet">
+  <link rel="stylesheet" href="./assets/styles.css">
+  
+  <style>
+    #fileInput, #importStateInput {
+      display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      position: absolute !important;
+      width: 0 !important;
+      height: 0 !important;
+      pointer-events: none !important;
+    }
+  </style>
+</head>
+<body class="view-library">
+  <a class="skip-link" href="#main">Aller au lecteur</a>
+
+  <!-- ================= ÉCRAN BIBLIOTHÈQUE / ACCUEIL ================= -->
+  <div id="libraryView" class="library-view">
+    <div class="library-container">
+      <header class="library-header">
+        <div class="library-brand">
+          <div class="logo">
+            <svg viewBox="0 0 64 64" fill="none">
+              <rect x="10" y="8" width="36" height="48" rx="10" fill="currentColor" opacity="0.1"></rect>
+              <path d="M20 16h17c6.075 0 11 4.925 11 11v10c0 6.075-4.925 11-11 11H20z" stroke="currentColor" stroke-width="4" stroke-linejoin="round"></path>
+              <path d="M24 24h15M24 32h15M24 40h10" stroke="currentColor" stroke-width="4" stroke-linecap="round"></path>
+            </svg>
+          </div>
+          <h1>DysReader</h1>
+        </div>
+        <button id="themeToggle" class="icon-btn" type="button" aria-label="Basculer le thème">◐</button>
+      </header>
+
+      <main class="library-grid">
+        <section class="card card-upload">
+          <h2>Nouveau document</h2>
+          <label class="upload" for="fileInput">
+            <input id="fileInput" type="file" accept=".epub,application/epub+zip">
+            <span class="upload-title">Charger un EPUB</span>
+            <span class="upload-subtitle">Glissez ou cliquez pour l'ajouter localement</span>
+          </label>
+        </section>
+
+        <section class="card card-shelf">
+          <h2>Ma Bibliothèque locale</h2>
+          <div class="shelf-container">
+            <div id="bookShelf" class="book-shelf"></div>
+          </div>
+        </section>
+
+        <section class="card card-profile">
+          <h2>Profils de Lecture</h2>
+          <div class="presets-row">
+            <button id="presetComfort" class="btn">Preset confort</button>
+            <button id="presetAssist" class="btn">Preset assisté</button>
+          </div>
+          <div class="profile-actions">
+            <button id="exportStateBtn" class="btn">Exporter profil (JSON)</button>
+            <label class="btn file-btn-label">
+              Importer profil (JSON)
+              <input id="importStateInput" type="file" accept=".json" style="display:none;">
+            </label>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- ================= LECTEUR IMMERSIF (PLEIN ÉCRAN) ================= -->
+  <div id="readerView" class="reader-view hidden">
+    <div id="headerTriggerZone" class="header-trigger-zone"></div>
+
+    <header id="readerHeader" class="reader-header reader-header-hidden">
+      <div class="reader-header-left">
+        <button id="btnBackToLibrary" class="btn" title="Retourner à la bibliothèque">← Bibliothèque</button>
+      </div>
+      <div class="reader-header-center">
+        <span id="readerBookTitle" class="reader-book-title">Titre du livre</span>
+      </div>
+      <div class="reader-header-right">
+        <button id="btnToggleToc" class="btn" title="Sommaire">Sommaire ≡</button>
+        <button id="btnToggleSettings" class="btn btn-primary" title="Ajustements Dys">Aa Réglages</button>
+        <button id="btnToggleTts" class="btn" title="Synthèse vocale">🔊 Voix</button>
+      </div>
+    </header>
+
+    <!-- Zone principale d'affichage du livre -->
+    <main id="main" class="main-reader">
+      <div class="viewer-shell" id="viewerShell">
+        <!-- Règle de lecture translucide pour le focus visuel -->
+        <div id="readingRuler" class="reading-ruler"></div>
+        
+        <!-- Bandes de navigation grises réactives de 18% -->
+        <div id="navOverlayLeft" class="nav-overlay nav-overlay-left">
+          <span class="nav-arrow">‹</span>
+        </div>
+        <div id="navOverlayRight" class="nav-overlay nav-overlay-right">
+          <span class="nav-arrow">›</span>
+        </div>
+        
+        <div id="viewer" class="viewer" aria-label="Lecteur EPUB"></div>
+      </div>
+    </main>
+
+    <!-- Pied de page escamotable avec boutons de navigation et estimation -->
+    <footer id="readerFooter" class="reader-footer reader-footer-hidden">
+      <button id="btnFooterPrev" class="btn btn-footer" type="button">◀ Précédent</button>
+      <span id="locationInfo" class="location-info">-</span>
+      <button id="btnFooterNext" class="btn btn-footer" type="button">Suivant ▶</button>
+    </footer>
+
+    <!-- Panneaux flottants -->
+    <div id="panelSettings" class="floating-panel hidden">
+      <div class="panel-header">
+        <h3>Réglages de lecture</h3>
+        <button class="close-panel-btn" data-close="panelSettings">✕</button>
+      </div>
+      <div class="panel-body">
+        <div class="control">
+          <label for="fontSelect">Police de lecture</label>
+          <select id="fontSelect">
+            <option value="Dyslexie, sans-serif">Dyslexie (Locale)</option>
+            <option value="Atkinson Hyperlegible Next, Atkinson Hyperlegible, sans-serif">Atkinson Hyperlegible</option>
+            <option value="Lexend, sans-serif">Lexend</option>
+            <option value="OpenDyslexic, Open-Dyslexic, sans-serif">OpenDyslexic</option>
+            <option value="Arial, sans-serif">Arial</option>
+            <option value="Verdana, sans-serif">Verdana</option>
+          </select>
+        </div>
+        <div class="control">
+          <label for="themeSelect">Fond de lecture</label>
+          <select id="themeSelect">
+            <option value="paper">Papier (Blanc)</option>
+            <option value="kavita">Papier (Kavita)</option>
+            <option value="cream">Crème</option>
+            <option value="soft">Doux (Bleuté)</option>
+            <option value="dark">Sombre</option>
+          </select>
+        </div>
+        <div class="slider-row">
+          <div class="control">
+            <label for="fontSize">Taille <span id="fontSizeValue">120%</span></label>
+            <input id="fontSize" type="range" min="90" max="220" value="120">
+          </div>
+          <div class="control">
+            <label for="lineHeight">Interligne <span id="lineHeightValue">1.65</span></label>
+            <input id="lineHeight" type="range" min="120" max="240" value="165">
+          </div>
+        </div>
+        <div class="slider-row">
+          <div class="control">
+            <label for="letterSpacing">Interlettre <span id="letterSpacingValue">0.02em</span></label>
+            <input id="letterSpacing" type="range" min="0" max="12" value="2">
+          </div>
+          <div class="control">
+            <label for="columnWidth">Largeur ligne <span id="columnWidthValue">72ch</span></label>
+            <input id="columnWidth" type="range" min="52" max="96" value="72">
+          </div>
+        </div>
+        
+        <div class="toggle-list">
+          <label><input id="enableUiDysMode" type="checkbox"> Appliquer au menu</label>
+          <label><input id="enableColorize" type="checkbox" checked> Activer la colorisation</label>
+          <label><input id="enableSyllables" type="checkbox" checked> Alterner les syllabes</label>
+          <label><input id="enableDigraphs" type="checkbox" checked> Stabiliser les digrammes</label>
+          <label><input id="enableSilent" type="checkbox" checked> Griser les lettres muettes</label>
+          <label><input id="enableLineFocus" type="checkbox"> Focus ligne au survol</label>
+          <label><input id="enableRuler" type="checkbox"> Activer la règle de lecture</label>
+          <label><input id="enableNavOverlays" type="checkbox" checked> Zones de clic visibles (survol)</label>
+        </div>
+
+        <div class="slider-row">
+          <div class="control">
+            <label for="modeSelect">Rendu</label>
+            <select id="modeSelect">
+              <option value="hybrid">Hybride</option>
+              <option value="syllables">Syllabes</option>
+              <option value="phonemes">Phonèmes</option>
+            </select>
+          </div>
+          <div class="control">
+            <label for="langSelect">Langue</label>
+            <select id="langSelect">
+              <option value="fr">Français</option>
+              <option value="en">Anglais</option>
+            </select>
+          </div>
+        </div>
+
+        <details class="palette-details">
+          <summary>Couleurs personnalisées</summary>
+          <div class="color-picker-grid">
+            <div class="color-picker-item">
+              <label for="colorSyl1">Syllabe 1</label>
+              <input type="color" id="colorSyl1" value="#2563eb">
+            </div>
+            <div class="color-picker-item">
+              <label for="colorSyl2">Syllabe 2</label>
+              <input type="color" id="colorSyl2" value="#dc2626">
+            </div>
+            <div class="color-picker-item">
+              <label for="colorDigraph">Digrammes</label>
+              <input type="color" id="colorDigraph" value="#16a34a">
+            </div>
+            <div class="color-picker-item">
+              <label for="colorSilent">Muettes</label>
+              <input type="color" id="colorSilent" value="#94a3b8">
+            </div>
+          </div>
+          <button id="resetColorsBtn" class="btn" style="width:100%; margin-top:10px;" type="button">Réinitialiser</button>
+        </details>
+
+        <div class="action-grid-1">
+          <button id="recolorBtn" class="btn" type="button">Forcer la colorisation</button>
+          <button id="exportEpubBtn" class="btn" type="button">Exporter en EPUB colorisé</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="panelToc" class="floating-panel hidden">
+      <div class="panel-header">
+        <h3>Table des matières</h3>
+        <button class="close-panel-btn" data-close="panelToc">✕</button>
+      </div>
+      <div id="toc" class="panel-body toc-list"></div>
+    </div>
+
+    <div id="panelTts" class="floating-panel hidden">
+      <div class="panel-header">
+        <h3>Synthèse Vocale (Neural Local)</h3>
+        <button class="close-panel-btn" data-close="panelTts">✕</button>
+      </div>
+      <div class="panel-body">
+        <div class="action-grid" style="margin-top:0; display: flex; gap: 8px;">
+          <button id="ttsPlay" class="btn btn-primary flex-1" type="button">▶ Lire</button>
+          <button id="ttsStop" class="btn flex-1" type="button">■ Arrêter</button>
+        </div>
+        
+        <!-- Indicateur de chargement du modèle Kokoro -->
+        <div id="ttsStatus" class="tts-status text-muted font-medium text-xs mt-1 text-center" style="color: var(--text-muted); font-size: 0.75rem;">
+          Modèle neural non chargé (S'initialise à l'ouverture)
+        </div>
+
+        <div class="control" style="margin-top:12px;">
+          <label for="ttsVoice">Voix</label>
+          <select id="ttsVoice" style="width:100%;"></select>
+        </div>
+        <div class="control">
+          <label for="ttsRate">Vitesse de lecture <span id="ttsRateValue">1.0x</span></label>
+          <input id="ttsRate" type="range" min="5" max="20" value="10">
+        </div>
+      </div>
+    </div>
+
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <!-- Chargement du module Foliate-JS directement en HTML pour contourner le compilateur de Vite -->
+  <script type="module" src="https://cdn.jsdelivr.net/npm/foliate-js@1.0.1/view.js"></script>
+  <script type="module" src="./assets/app.js"></script>
+</body>
+</html>
