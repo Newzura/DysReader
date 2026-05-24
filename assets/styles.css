@@ -465,13 +465,13 @@ body {
 /* --- BANDES DE NAVIGATION LATÉRALES (OVERLAYS 18%) --- */
 .nav-overlay {
   position: absolute;
-  top: 60px; /* Aligné juste sous l'en-tête */
-  bottom: 0;
-  width: 18%; /* Largeur de 18% réactive */
+  top: 60px;    /* Aligné juste sous l'en-tête */
+  bottom: 50px; /* S'arrête pile au-dessus du footer pour un vrai centrage vertical sur la zone de texte */
+  width: 18%;   /* Largeur de 18% réactive */
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 98; /* Placé au-dessus du viewer (0) mais sous l'interface flottante (1010) */
+  z-index: 98;  /* Placé au-dessus du viewer (0) mais sous l'interface flottante (1010) */
   cursor: pointer;
   user-select: none;
   background-color: transparent;
@@ -492,16 +492,12 @@ body {
   height: 56px; /* Diamètre agrandi */
   border-radius: 50%;
   
-  /* Centrage géométrique absolu forcé */
+  /* Centrage géométrique absolu de la boîte */
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
   line-height: 1 !important;
   box-sizing: border-box !important;
-  
-  /* Ajustement précis de 3px pour remonter l'icône (compense la ligne de base asymétrique des polices Dys) */
-  padding-bottom: 3px !important; 
-  
   opacity: 0;
   transition: all var(--transition-speed) ease;
   pointer-events: none;
@@ -510,6 +506,18 @@ body {
 /* Masquage si l'overlay est désactivé */
 .nav-overlay.no-hover .nav-arrow {
   display: none !important;
+}
+
+/* --- AJUSTEMENT OPTIQUE ASYMÉTRIQUE POUR LES POLICES DYS --- */
+/* Élimine l'espace vide interne asymétrique des caractères < et > pour un milieu parfait */
+.nav-overlay-left .nav-arrow {
+  padding-bottom: 3px !important;
+  padding-right: 3px !important; /* Ajuste l'icône < */
+}
+
+.nav-overlay-right .nav-arrow {
+  padding-bottom: 3px !important;
+  padding-left: 4px !important;  /* Repousse l'icône > pile au centre du cercle */
 }
 
 /* --- EFFETS DE SURVOL UNIQUEMENT POUR ORDINATEUR (SOURIS) --- */

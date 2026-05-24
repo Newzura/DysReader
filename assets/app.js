@@ -28,6 +28,7 @@ let view = null;
 let currentBookId = null;
 let activeDocument = null; 
 let activeBody = null;     
+let isBookInitializing = false; // Bouclier de sécurité anti-écrasement pour le marque-page     
 
 // --- GESTION DU RECHARGEMENT DES PRÉFÉRENCES ---
 function loadSettings() {
@@ -1185,7 +1186,16 @@ function showMenus() {
   
   if (!isAnyPanelOpen()) {
     menuTimeout = setTimeout(() => {
-      hideMenus();
+      // On vérification dynamique si la souris survole activement le bandeau du haut ou du bas
+      const isMouseOverInterface = (header && header.matches(':hover')) || (footer && footer.matches(':hover'));
+      
+      if (isMouseOverInterface) {
+        // La souris est toujours là : on réinitialise proprement le compteur de 6 secondes
+        showMenus();
+      } else {
+        // Personne sur l'interface : on peut masquer les menus en toute sécurité
+        hideMenus();
+      }
     }, 6000);
   }
 }
@@ -1791,9 +1801,11 @@ async function loadBookFromArrayBuffer(arrayBuffer, filename, savedPosition = nu
 
   view.addEventListener('relocate', (e) => {
     updateLocationInfo(e.detail);
-    if (currentBookId) {
-      const cfi = e.detail.cfi || e.detail.range;
-      updateBookBookmark(currentBookId, cfi);
+    
+    // On ne sauvegarde en base QUE si le bouclier d'initialisation est désactivé
+    if (currentBookId && !isBookInitializing) {
+      const cfi = e.detail.cfi || e.detail.location || e.detail.range;
+      if (cfi) updateBookBookmark(currentBookId, cfi);
     }
 
     // Relocalisation intelligente lors de la transition de page automatique
@@ -1822,6 +1834,9 @@ async function loadBookFromArrayBuffer(arrayBuffer, filename, savedPosition = nu
   try {
     console.log("📂 [DysReader] Ouverture du livre en cours via Foliate-JS...");
     const file = new File([arrayBuffer], filename, { type: 'application/epub+zip' });
+    
+    isBookInitializing = true; // On active le bouclier avant d'ouvrir le fichier
+    
     await view.open(file);
     console.log("✅ [DysReader] Méthode view.open() résolue avec succès !");
 
@@ -1834,6 +1849,11 @@ async function loadBookFromArrayBuffer(arrayBuffer, filename, savedPosition = nu
       console.log("📖 [DysReader] Affichage de la première page du livre...");
       await view.next();
     }
+
+    // On attend un infime instant que Foliate se stabilise sur la page demandée avant de couper le bouclier
+    setTimeout(() => {
+      isBookInitializing = false;
+    }, 400);
 
     const toc = view.book.toc;
     const tocContainer = document.getElementById('toc');
@@ -1871,11 +1891,76 @@ async function loadBookFromArrayBuffer(arrayBuffer, filename, savedPosition = nu
 
 function updateLocationInfo(detail) {
   const locationInfo = document.getElementById('locationInfo');
-  if (detail && detail.index !== undefined) {
-    const sectionIndex = detail.index + 1;
-    const fraction = detail.fraction ? ` (${Math.round(detail.fraction * 100)}%)` : '';
-    locationInfo.textContent = `Chapitre ${sectionIndex}${fraction}`;
-  } else {
+  if (!locationInfo) return;
+
+  try {
+    // 1. Index du Chapitre (Multi-sondes)
+    let sectionIndex = null;
+    if (detail && detail.index !== undefined) {
+      sectionIndex = detail.index + 1;
+    } else if (view?.sectionIndex !== undefined && view.sectionIndex !== null) {
+      sectionIndex = view.sectionIndex + 1;
+    } else if (view?.renderer?.state?.index !== undefined) {
+      sectionIndex = view.renderer.state.index + 1;
+    }
+
+    // 2. Pourcentage d'avancement global
+    let progressPercent = 0;
+    const rawFraction = detail?.fraction ?? view?.renderer?.state?.fraction ?? view?.renderer?.fraction;
+    if (rawFraction !== undefined && rawFraction !== null) {
+      progressPercent = Math.round(rawFraction * 100);
+    }
+
+    // 3. Pages locales du chapitre
+    const r = view?.renderer;
+    const currentPage = detail?.page ?? r?.page ?? r?.state?.page ?? r?.state?.currentPage;
+    const totalPages = detail?.pages ?? r?.pages ?? r?.state?.pages ?? r?.state?.totalPages;
+
+    // 4. Calcul de la pagination globale Kobo
+    let globalPageStr = '';
+    if (currentPage !== undefined && totalPages !== undefined && totalPages > 0 && rawFraction !== undefined && rawFraction !== null) {
+      const totalSections = view?.book?.sections?.length || 1;
+      const globalTotalPages = Math.round(totalPages * totalSections);
+      let globalCurrentPage = Math.round(rawFraction * globalTotalPages);
+      
+      if (globalCurrentPage < 1) globalCurrentPage = 1;
+      if (rawFraction >= 0.99) globalCurrentPage = globalTotalPages;
+      if (globalCurrentPage > globalTotalPages) globalCurrentPage = globalTotalPages;
+
+      globalPageStr = `Page ${globalCurrentPage} sur ${globalTotalPages}`;
+    }
+
+    // 5. Pages intérieures du chapitre
+    let chapterPageStr = '';
+    if (currentPage !== undefined && totalPages !== undefined && totalPages > 0) {
+      chapterPageStr = `Ch. p. ${currentPage}/${totalPages}`;
+    }
+
+    // 6. Assemblage modulaire (Affiche ce qui est prêt, élimine définitivement les "...")
+    let displayParts = [];
+    if (globalPageStr) {
+      displayParts.push(`${globalPageStr} (${progressPercent}%)`);
+    } else if (progressPercent) {
+      displayParts.push(`Avancement : ${progressPercent}%`);
+    }
+
+    if (sectionIndex !== null) {
+      displayParts.push(`Chapitre ${sectionIndex}`);
+    }
+
+    if (chapterPageStr) {
+      displayParts.push(chapterPageStr);
+    }
+
+    // Injection finale
+    if (displayParts.length > 0) {
+      locationInfo.textContent = displayParts.join(' • ');
+    } else {
+      locationInfo.textContent = "-";
+    }
+
+  } catch (err) {
+    console.warn("[DysReader] Erreur dans le rafraîchissement du footer :", err);
     locationInfo.textContent = "-";
   }
 }
