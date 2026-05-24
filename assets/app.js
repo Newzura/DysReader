@@ -1267,6 +1267,16 @@ function initUI() {
 
   document.getElementById('headerTriggerZone').addEventListener('mouseenter', showMenus);
 
+  // Injection dynamique de la zone de détection basse pour le bas de page
+  const readerView = document.getElementById('readerView');
+  if (readerView && !document.getElementById('footerTriggerZone')) {
+    const footerTrigger = document.createElement('div');
+    footerTrigger.id = 'footerTriggerZone';
+    footerTrigger.className = 'footer-trigger-zone';
+    readerView.appendChild(footerTrigger);
+    footerTrigger.addEventListener('mouseenter', showMenus);
+  }
+
   document.getElementById('fontSelect').value = settings.font;
   document.getElementById('themeSelect').value = settings.theme;
   document.getElementById('fontSize').value = settings.fontSize;

@@ -389,6 +389,15 @@ body {
   z-index: 999;
 }
 
+.footer-trigger-zone {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 15px;
+  z-index: 999;
+}
+
 .reader-header {
   position: fixed;
   top: 0;
@@ -475,26 +484,42 @@ body {
   right: 0;
 }
 
-/* Effet d'overlay gris au survol (désactivé si la classe .no-hover est présente) */
-.nav-overlay:not(.no-hover):hover {
-  background-color: rgba(128, 128, 128, 0.12); /* Gris doux translucide */
-}
-
 .nav-arrow {
-  font-size: 3.5rem;
+  font-size: 1.75rem; /* Proportion optimale pour la nouvelle taille */
   color: var(--text-muted);
+  background-color: rgba(128, 128, 128, 0.2) !important; /* Gris transparent permanent */
+  width: 56px;  /* Diamètre agrandi */
+  height: 56px; /* Diamètre agrandi */
+  border-radius: 50%;
+  
+  /* Centrage géométrique absolu forcé */
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 1 !important;
+  box-sizing: border-box !important;
+  
+  /* Ajustement précis de 3px pour remonter l'icône (compense la ligne de base asymétrique des polices Dys) */
+  padding-bottom: 3px !important; 
+  
   opacity: 0;
-  transition: opacity var(--transition-speed);
+  transition: all var(--transition-speed) ease;
   pointer-events: none;
 }
 
-/* Affichage de la flèche uniquement s'il n'y a pas la classe .no-hover */
-.nav-overlay:not(.no-hover):hover .nav-arrow {
-  opacity: 0.7;
-}
-
+/* Masquage si l'overlay est désactivé */
 .nav-overlay.no-hover .nav-arrow {
   display: none !important;
+}
+
+/* --- EFFETS DE SURVOL UNIQUEMENT POUR ORDINATEUR (SOURIS) --- */
+@media (hover: hover) {
+  .nav-overlay:not(.no-hover):hover .nav-arrow {
+    opacity: 1;
+    background-color: rgba(128, 128, 128, 0.35) !important; /* Renforcement de l'opacité au survol */
+    color: var(--text-color) !important; /* La flèche s'adapte à la couleur du texte de ton thème courant */
+    transform: scale(1.05); /* Léger effet de dynamisme au survol */
+  }
 }
 
 .reading-ruler {
@@ -622,6 +647,92 @@ select {
   color: var(--text-color);
   font-size: 0.85rem;
   outline: none;
+
+  /* --- RESET MOBILE : Supprime le design par défaut imposé par iOS et Android --- */
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  
+  /* Intégration d'une flèche SVG harmonieuse */
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 14px;
+  padding-right: 32px; /* Marge de sécurité pour que la flèche ne chevauche pas le texte */
+}
+
+/* --- ISOLATION DES MENUS DÉROULANTS DU PANNEAU (INDÉPENDANTS DE LA LISEUSE) --- */
+
+/* 1. Rendu forcé pour le Mode Clair (Mobile & Desktop) */
+.floating-panel select {
+  background-color: #f4f6f8 !important; 
+  color: #1e293b !important;            
+  border-color: #cbd5e1 !important;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>") !important;
+}
+
+/* 2. Rendu forcé pour le Mode Sombre (Mobile & Desktop) */
+[data-theme="dark"] .floating-panel select {
+  background-color: #0f172a !important; 
+  color: #f1f5f9 !important;            
+  border-color: #334155 !important;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>") !important;
+}
+
+/* --- ISOLATION DE TOUTE L'INTERFACE DU LECTEUR (HEADER, FOOTER, PANNEAUX) --- */
+
+/* Mode Clair : Forçage des boutons et lignes du Sommaire */
+.reader-header .btn:not(.btn-primary),
+.reader-footer .btn:not(.btn-primary),
+.floating-panel .btn:not(.btn-primary),
+.floating-panel .toc-item {
+  background-color: #ffffff !important;
+  color: #1e293b !important;
+  border-color: #cbd5e1 !important;
+}
+
+/* Structure propre pour les éléments de liste du Sommaire */
+.floating-panel .toc-item {
+  display: block !important;
+  width: 100% !important;
+  padding: 10px 14px !important;
+  font-size: 0.85rem !important;
+  font-weight: 600 !important;
+  text-align: left !important;
+  cursor: pointer !important;
+  box-sizing: border-box !important;
+  margin-bottom: 6px !important;
+  border-radius: var(--border-radius) !important;
+}
+
+/* Mode Clair : États au survol (Hover) */
+.reader-header .btn:not(.btn-primary):hover,
+.reader-footer .btn:not(.btn-primary):hover,
+.floating-panel .btn:not(.btn-primary):hover,
+.floating-panel .toc-item:hover {
+  background-color: #f4f6f8 !important;
+  color: #1e293b !important;
+  border-color: #64748b !important;
+}
+
+/* Mode Sombre : Forçage des boutons et lignes du Sommaire */
+[data-theme="dark"] .reader-header .btn:not(.btn-primary),
+[data-theme="dark"] .reader-footer .btn:not(.btn-primary),
+[data-theme="dark"] .floating-panel .btn:not(.btn-primary),
+[data-theme="dark"] .floating-panel .toc-item {
+  background-color: #1e293b !important; /* Fond sombre d'origine de l'index */
+  color: #f1f5f9 !important;            /* Texte blanc propre */
+  border-color: #334155 !important;
+}
+
+/* Mode Sombre : États au survol (Hover) */
+[data-theme="dark"] .reader-header .btn:not(.btn-primary):hover,
+[data-theme="dark"] .reader-footer .btn:not(.btn-primary):hover,
+[data-theme="dark"] .floating-panel .btn:not(.btn-primary):hover,
+[data-theme="dark"] .floating-panel .toc-item:hover {
+  background-color: #0f172a !important; /* Devient bleu nuit foncé au survol */
+  color: #f1f5f9 !important;
+  border-color: #94a3b8 !important;
 }
 
 .slider-row {
