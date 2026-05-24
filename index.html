@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="fr" data-theme="light">
+<html lang="fr" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,6 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;500;700&family=Lexend:wght@400;500;700&display=swap" rel="stylesheet">
   <link href="https://fonts.cdnfonts.com/css/opendyslexic" rel="stylesheet">
   <link rel="stylesheet" href="./assets/styles.css">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
   
   <style>
     #fileInput, #importStateInput {
@@ -26,20 +27,15 @@
 <body class="view-library">
   <a class="skip-link" href="#main">Aller au lecteur</a>
 
-  <!-- ================= ÉCRAN BIBLIOTHÈQUE / ACCUEIL ================= -->
   <div id="libraryView" class="library-view">
     <div class="library-container">
       <header class="library-header">
         <div class="library-brand">
-          <div class="logo">
-            <svg viewBox="0 0 64 64" fill="none">
-              <rect x="10" y="8" width="36" height="48" rx="10" fill="currentColor" opacity="0.1"></rect>
-              <path d="M20 16h17c6.075 0 11 4.925 11 11v10c0 6.075-4.925 11-11 11H20z" stroke="currentColor" stroke-width="4" stroke-linejoin="round"></path>
-              <path d="M24 24h15M24 32h15M24 40h10" stroke="currentColor" stroke-width="4" stroke-linecap="round"></path>
-            </svg>
-          </div>
-          <h1>DysReader</h1>
+         <div class="logo">
+          <img src="/dysreader.png" alt="Logo DysReader" style="max-height: 48px; width: auto; object-fit: contain;">
         </div>
+        <h1>DysReader</h1>
+       </div>
         <button id="themeToggle" class="icon-btn" type="button" aria-label="Basculer le thème">◐</button>
       </header>
 
@@ -73,14 +69,12 @@
               <input id="importStateInput" type="file" accept=".json" style="display:none;">
             </label>
           </div>
-          <!-- Bouton principal d'exportation PDF Haute-Fidélité Dys -->
-          <button id="convertPdfBtn" class="btn btn-primary" style="margin-top: 12px; width: 100%;" type="button">📄 Convertir un EPUB en PDF Dys</button>
+          <button id="convertPdfBtn" class="btn" style="margin-top: 12px; width: 100%; opacity: 0.5; cursor: not-allowed;" type="button" disabled title="Fonctionnalité en cours de maintenance">📄 PDF Dys (En cours de correction)</button>
         </section>
       </main>
     </div>
   </div>
 
-  <!-- ================= LECTEUR IMMERSIF (PLEIN ÉCRAN) ================= -->
   <div id="readerView" class="reader-view hidden">
     <div id="headerTriggerZone" class="header-trigger-zone"></div>
 
@@ -98,13 +92,10 @@
       </div>
     </header>
 
-    <!-- Zone principale d'affichage du livre -->
     <main id="main" class="main-reader">
       <div class="viewer-shell" id="viewerShell">
-        <!-- Règle de lecture translucide pour le focus visuel -->
         <div id="readingRuler" class="reading-ruler"></div>
         
-        <!-- Bandes de navigation grises réactives de 18% -->
         <div id="navOverlayLeft" class="nav-overlay nav-overlay-left">
           <span class="nav-arrow">‹</span>
         </div>
@@ -116,14 +107,12 @@
       </div>
     </main>
 
-    <!-- Pied de page escamotable avec boutons de navigation et estimation -->
     <footer id="readerFooter" class="reader-footer reader-footer-hidden">
       <button id="btnFooterPrev" class="btn btn-footer" type="button">◀ Précédent</button>
       <span id="locationInfo" class="location-info">-</span>
       <button id="btnFooterNext" class="btn btn-footer" type="button">Suivant ▶</button>
     </footer>
 
-    <!-- Panneaux flottants -->
     <div id="panelSettings" class="floating-panel hidden">
       <div class="panel-header">
         <h3>Réglages de lecture</h3>
@@ -224,8 +213,7 @@
           <button id="resetColorsBtn" class="btn" style="width:100%; margin-top:10px;" type="button">Réinitialiser</button>
         </details>
 
-        <!-- Les boutons d'exportation obsolètes ont été retirés du menu de lecture -->
-      </div>
+        </div>
     </div>
 
     <div id="panelToc" class="floating-panel hidden">
@@ -247,7 +235,6 @@
           <button id="ttsStop" class="btn flex-1" type="button">■ Arrêter</button>
         </div>
         
-        <!-- Indicateur de chargement du modèle Kokoro -->
         <div id="ttsStatus" class="tts-status text-muted font-medium text-xs mt-1 text-center" style="color: var(--text-muted); font-size: 0.75rem;">
           Modèle neural non chargé (S'initialise à l'ouverture)
         </div>
@@ -263,7 +250,8 @@
       </div>
     </div>
 
-<!-- Modal flottant de conversion PDF Haute-Fidélité -->
+  </div> <!-- Fermeture du reader-view -->
+
   <div id="pdfModal" class="floating-panel hidden" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 420px; z-index: 2000; box-shadow: 0 10px 40px rgba(0,0,0,0.25);">
     <div class="panel-header">
       <h3>Convertir un EPUB en PDF Dys</h3>
@@ -272,7 +260,6 @@
     <div class="panel-body" style="display: flex; flex-direction: column; gap: 14px; padding: 16px;">
       <p style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; margin: 0;">Sélectionnez un livre de votre bibliothèque locale ou chargez-en un nouveau depuis votre disque pour générer un fichier PDF haute-fidélité colorisé avec vos réglages de lecture actifs.</p>
       
-      <!-- Option 1: Bibliothèque locale -->
       <div class="control">
         <label for="pdfSelectBook" style="font-size: 0.75rem; font-weight: bold; margin-bottom: 4px; display: block;">1. Choisir un livre de la bibliothèque</label>
         <select id="pdfSelectBook" style="width: 100%; margin-bottom: 8px;"></select>
@@ -281,7 +268,6 @@
       
       <div style="text-align: center; font-size: 0.75rem; color: var(--text-muted); border-bottom: 1px solid var(--border-color); line-height: 0.1em; margin: 15px 0;"><span style="background: var(--panel-bg); padding: 0 10px;">OU</span></div>
       
-      <!-- Option 2: Depuis le disque -->
       <div class="control">
         <label style="font-size: 0.75rem; font-weight: bold; margin-bottom: 6px; display: block;">2. Charger un livre depuis le disque</label>
         <label class="btn file-btn-label" style="display: flex; width: 100%; text-align: center; justify-content: center; cursor: pointer; border: 1px dashed var(--border-color); background: var(--bg-color);">
@@ -289,11 +275,20 @@
           <input id="pdfFileInput" type="file" accept=".epub,application/epub+zip" style="display:none;">
         </label>
       </div>
+
+      <div id="pdfProgressZone" class="hidden" style="margin-top: 4px; padding: 10px; background: rgba(0,0,0,0.03); border-radius: 6px; border: 1px solid var(--border-color);">
+        <div style="font-size: 0.75rem; font-weight: bold; margin-bottom: 6px;" id="pdfProgressStatus">Préparation...</div>
+        <div style="width: 100%; background: #e2e8f0; height: 6px; border-radius: 3px; overflow: hidden;">
+          <div id="pdfProgressBar" style="width: 0%; height: 100%; background: #2563eb; transition: width 0.2s;"></div>
+        </div>
+      </div>
     </div>
   </div>
 
-<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-  <!-- Chargement du module Foliate-JS directement en HTML pour contourner le compilateur de Vite -->
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  
   <script type="module" src="https://cdn.jsdelivr.net/npm/foliate-js@1.0.1/view.js"></script>
   <script type="module" src="./assets/app.js"></script>
 </body>

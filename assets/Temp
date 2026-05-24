@@ -596,8 +596,7 @@ function injectIframeStyles(doc, opts, isIllustrationPage = false) {
       color: inherit !important;
     }
 
-    /* Style du bloc de lecture TTS */
-    .tts-reading-block {
+    /* Style du bloc de lecture TTS */    .tts-reading-block {
       background-color: #fef08a !important; 
       color: #000000 !important;
       border-radius: 4px;
@@ -1359,31 +1358,28 @@ function initUI() {
   document.getElementById('presetComfort').addEventListener('click', applyPresetComfort);
   document.getElementById('presetAssist').addEventListener('click', applyPresetAssist);
 
-  // Liaison des boutons de contrôle du Modal PDF de la page d'accueil (Sécurisée)
-  document.getElementById('convertPdfBtn').addEventListener('click', (ev) => {
-    ev.preventDefault();
-    ev.stopPropagation();
+  // Liaison des boutons de contrôle du Modal PDF de la page d'accueil
+  document.getElementById('convertPdfBtn').addEventListener('click', () => {
     document.getElementById('pdfModal').classList.remove('hidden');
     populatePdfModalSelect();
   });
 
-  document.getElementById('closePdfModal').addEventListener('click', (ev) => {
-    ev.preventDefault();
-    ev.stopPropagation();
+  document.getElementById('closePdfModal').addEventListener('click', () => {
     document.getElementById('pdfModal').classList.add('hidden');
   });
 
-  document.getElementById('btnConvertLocalPdf').addEventListener('click', (ev) => {
-    ev.preventDefault(); // EMPÊCHE le rechargement de page ou la soumission fantôme
-    ev.stopPropagation(); // Stoppe la propagation de l'événement vers les parents HTML
-    
+  document.getElementById('btnConvertLocalPdf').addEventListener('click', () => {
     const select = document.getElementById('pdfSelectBook');
     const bookId = select.value;
     if (!bookId) {
       alert("Veuillez sélectionner un livre.");
       return;
     }
-    exportBookByOpeningItSilently(bookId);
+    getBookFromLocalDb(bookId).then(record => {
+      if (record) {
+        exportBookToPdf(record.data, record.title || record.name);
+      }
+    });
   });
 
   document.getElementById('pdfFileInput').addEventListener('change', (e) => {
@@ -1393,12 +1389,7 @@ function initUI() {
     const reader = new FileReader();
     reader.onload = function(evt) {
       const arrayBuffer = evt.target.result;
-      const id = file.name.replace(/\s+/g, '_') + '_' + file.size;
-      // Enregistre d'abord le fichier dans IndexedDB pour que Foliate puisse l'ouvrir
-      saveBookToLocalDb(id, file.name, file.name, arrayBuffer).then(() => {
-        loadBookShelf();
-        exportBookByOpeningItSilently(id);
-      });
+      exportBookToPdf(arrayBuffer, file.name.replace(/\.[^/.]+$/, "")); // Enlève l'extension
     };
     reader.readAsArrayBuffer(file);
   });
@@ -1427,12 +1418,12 @@ function initUI() {
   }
 
   document.getElementById('themeToggle').addEventListener('click', () => {
-    const current = document.documentElement.getAttribute('data-theme') || 'dark';
-    const target = current === 'dark' ? 'light' : 'dark';
+    const current = document.documentElement.getAttribute('data-theme') || 'light';
+    const target = current === 'light' ? 'dark' : 'light';
     document.documentElement.setAttribute('data-theme', target);
     localStorage.setItem('dysreader_app_theme', target);
   });
-  const savedAppTheme = localStorage.getItem('dysreader_app_theme') || 'dark';
+  const savedAppTheme = localStorage.getItem('dysreader_app_theme') || 'light';
   document.documentElement.setAttribute('data-theme', savedAppTheme);
 }
 
@@ -1530,7 +1521,7 @@ function applyAllSettings() {
   view.setAttribute('max-inline-size', `${settings.columnWidth * 10}px`);
   view.setAttribute('gap', '5%');
   const isMobile = window.innerWidth <= 600;
-  view.setAttribute('margin', isMobile ? '20px' : '60px');
+view.setAttribute('margin', isMobile ? '20px' : '60px');
 
   const leftOverlay = document.getElementById('navOverlayLeft');
   const rightOverlay = document.getElementById('navOverlayRight');
@@ -1881,342 +1872,152 @@ function populatePdfModalSelect() {
   };
 }
 
-// Ouvre silencieusement le livre sous un masque de chargement opaque, puis déclenche l'exportation
-async function exportBookByOpeningItSilently(bookId) {
-  // 1. Création d'un écran de chargement de premier plan (z-index: 99999) pour masquer la liseuse
-  const backdrop = document.createElement('div');
-  backdrop.id = 'pdf-export-backdrop';
-  backdrop.style.position = 'fixed';
-  backdrop.style.top = '0';
-  backdrop.style.left = '0';
-  backdrop.style.width = '100vw';
-  backdrop.style.height = '100vh';
-  backdrop.style.backgroundColor = '#ffffff'; // Blanc opaque
-  backdrop.style.zIndex = '99999'; // Au-dessus de tout le reste
-  backdrop.style.display = 'flex';
-  backdrop.style.flexDirection = 'column';
-  backdrop.style.alignItems = 'center';
-  backdrop.style.justifyContent = 'center';
-  backdrop.style.fontFamily = 'var(--font-interface), sans-serif';
-
-  backdrop.innerHTML = `
-    <div style="font-size: 1.5rem; font-weight: bold; color: var(--primary-color, #2563eb); margin-bottom: 12px; text-align: center;">
-      Génération de votre PDF Dys...
-    </div>
-    <div id="backdrop-progress-status" style="font-size: 1rem; color: var(--text-color, #1e293b); margin-bottom: 16px; text-align: center;">
-      Initialisation de la liseuse...
-    </div>
-    <div style="width: 280px; background: #e2e8f0; height: 8px; border-radius: 4px; overflow: hidden; margin-bottom: 10px;">
-      <div id="backdrop-progress-bar" style="width: 5%; height: 100%; background: var(--primary-color, #2563eb); transition: width 0.2s;"></div>
-    </div>
-    <div style="font-size: 0.8rem; color: var(--text-muted, #64748b);">Préparation de l'exportation globale...</div>
-  `;
-
-  const backdropStatus = backdrop.querySelector('#backdrop-progress-status');
-  const backdropBar = backdrop.querySelector('#backdrop-progress-bar');
-
-  document.body.appendChild(backdrop);
-
+// Décompresse l'EPUB, applique la coloration DYS sur tous les chapitres, et lance l'impression virtuelle PDF
+async function exportBookToPdf(arrayBuffer, title) {
   try {
-    // 2. On récupère le fichier depuis IndexedDB
-    const record = await getBookFromLocalDb(bookId);
-    if (!record) {
-      throw new Error("Impossible de trouver le livre dans la base de données locale.");
-    }
+    alert(`Début de la conversion en PDF pour "${title}". Veuillez patienter pendant l'assemblage de tous les chapitres...`);
 
-    currentBookId = bookId;
-    
-    // 3. On remet à zéro l'ancien document pour notre surveillance
-    activeDocument = null;
-
-    // 4. On lance l'ouverture du livre (qui va instancier 'view' et déclencher le chargement de Foliate)
-    await loadBookFromArrayBuffer(record.data, record.name, record.lastPosition);
-
-    // 5. On surveille activeDocument jusqu'à ce que l'écouteur principal de Foliate l'ait assigné
-    const checkInterval = setInterval(async () => {
-      if (activeDocument) {
-        clearInterval(checkInterval); // On arrête la surveillance immédiate
-
-        try {
-          backdropStatus.innerText = "Décompression du livre et application des styles Dys...";
-          backdropBar.style.width = "20%";
-          
-          // Lance la génération du PDF unique global
-          await runSingleRenderPdfExport(record.data, record.title || record.name, backdropStatus, backdropBar);
-          
-          // Nettoyage et retour automatique à la bibliothèque
-          switchView('library');
-          document.getElementById('pdfModal').classList.add('hidden');
-        } catch (exportError) {
-          console.error("Erreur durant l'exportation PDF:", exportError);
-        } finally {
-          if (backdrop) backdrop.remove();
-        }
-      }
-    }, 100); // Vérification toutes les 100ms
-
-  } catch (err) {
-    console.error("Échec de la transition masquée :", err);
-    if (backdrop) backdrop.remove();
-    alert("Une erreur est survenue lors de l'exportation : " + err.message);
-  }
-}
-
-// Effectue l'extraction, le formatage global de tous les chapitres et enregistre le PDF final
-async function runSingleRenderPdfExport(arrayBuffer, title, backdropStatus, backdropBar) {
-  console.log("██████████ 🔍 [START EXTRACTOR DEBUG] ██████████");
-  console.log(`[LOG] Titre ciblé pour génération : "${title}"`);
-  console.log("[LOG] Analyse de l'état actuel des préférences Dys de lecture :", settings);
-
-  // 1. Sauvegarde des styles d'origine du Body et du document HTML
-  console.log("[LOG] Sauvegarde des contraintes de défilement d'origine de l'application hôte...");
-  const originalHtmlOverflow = document.documentElement.style.overflow;
-  const originalHtmlHeight = document.documentElement.style.height;
-  const originalBodyOverflow = document.body.style.overflow;
-  const originalBodyHeight = document.body.style.height;
-  console.log(`[LOG] Valeurs d'origine - HTML overflow: "${originalHtmlOverflow}", Body overflow: "${originalBodyOverflow}"`);
-
-  // 2. Déverrouillage temporaire de la hauteur du Body pour que html2canvas mesure tout le livre
-  console.log("[LOG] Déverrouillage forcé des contraintes 'height: 100vh' et 'overflow: hidden'...");
-  document.documentElement.style.setProperty('overflow', 'visible', 'important');
-  document.documentElement.style.setProperty('height', 'auto', 'important');
-  document.body.style.setProperty('overflow', 'visible', 'important');
-  document.body.style.setProperty('height', 'auto', 'important');
-
-  // 3. Création du conteneur de fusion (Ajusté au premier plan absolu)
-  console.log("[LOG] Instanciation du conteneur parent temporaire de fusion...");
-  const combinedContainer = document.createElement('div');
-  combinedContainer.id = 'combined-pdf-container';
-  
-  // CONFIGURATION GÉOMÉTRIQUE STRICTE CONTRE LA TRICHERIE DU NAVIGATEUR :
-  combinedContainer.style.position = 'fixed';
-  combinedContainer.style.top = '0';
-  combinedContainer.style.left = '0';
-  combinedContainer.style.width = '680px';
-  combinedContainer.style.height = 'auto';
-  combinedContainer.style.padding = '40px';
-  combinedContainer.style.backgroundColor = '#ffffff';
-  combinedContainer.style.zIndex = '999999'; // Propulsé au premier plan pour forcer le Paint graphique du texte
-  combinedContainer.style.margin = '0 auto';
-  console.log("[LOG] Styles géométriques appliqués sur #combined-pdf-container. Attente d'injection.");
-
-  const activeConfig = {
-    font: settings.font,
-    fontSize: settings.fontSize + '%',
-    lineHeight: settings.lineHeight / 100,
-    letterSpacing: settings.letterSpacing / 100 + 'em'
-  };
-  console.log("[LOG] Configuration typographique calculée :", activeConfig);
-
-  const styleEl = document.createElement('style');
-  styleEl.innerHTML = `
-    #combined-pdf-container, #combined-pdf-container * {
-      box-sizing: border-box;
-      column-width: auto !important; /* Détruit les colonnes horizontales de foliate-js qui déportent le texte */
-      column-count: 1 !important;
-      max-width: 100% !important;
-    }
-    #combined-pdf-container {
-      font-family: ${activeConfig.font} !important;
-      font-size: ${activeConfig.fontSize} !important;
-      line-height: ${activeConfig.lineHeight} !important;
-      letter-spacing: ${activeConfig.letterSpacing} !important;
-      color: #000000 !important;
-      background-color: #ffffff !important;
-      display: block !important;
-    }
-    
-    #combined-pdf-container p {
-      font-family: inherit !important;
-      color: #000000 !important;
-      display: block !important;
-      visibility: visible !important;
-      opacity: 1 !important;
-      margin-bottom: 1.4em !important;
-      text-align: left !important;
-    }
-
-    #combined-pdf-container span {
-      display: inline !important;
-    }
-    
-    .chapter-wrapper {
-      page-break-after: always !important;
-      break-after: page !important;
-      width: 100% !important;
-      margin-bottom: 40px !important;
-      display: block !important;
-    }
-    .chapter-wrapper:last-child {
-      page-break-after: avoid !important;
-      break-after: avoid !important;
-    }
-    .syl-1 { color: ${settings.colorSyl1} !important; font-weight: 500; display: inline !important; }
-    .syl-2 { color: ${settings.colorSyl2} !important; font-weight: 500; display: inline !important; }
-    .digraph { text-decoration: underline !important; text-decoration-color: ${settings.colorDigraph} !important; text-decoration-thickness: 2px !important; display: inline !important; }
-    .silent { color: ${settings.colorSilent} !important; opacity: 0.6 !important; display: inline !important; }
-  `;
-  combinedContainer.appendChild(styleEl);
-  console.log("[LOG] Balise <style> de forçage injectée dans le conteneur temporaire.");
-
-  try {
-    console.log("[LOG] Décompression de l'ArrayBuffer du livre via JSZip...");
+    if (!window.JSZip) throw new Error("JSZip non disponible.");
     const zip = await JSZip.loadAsync(arrayBuffer);
     const htmlEntries = [];
 
+    // Récupère l'ensemble des fichiers HTML de l'EPUB
     zip.forEach((path, entry) => {
       if (path.endsWith('.html') || path.endsWith('.xhtml')) {
         htmlEntries.push(entry);
       }
     });
 
-    console.log(`[LOG] Scan ZIP achevé. Fichiers HTML/XHTML bruts détectés : ${htmlEntries.length}`);
+    // Tri des chapitres pour conserver l'ordre de lecture
     htmlEntries.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
-    console.log("[LOG] Tri numérique de l'ordre séquentiel des fichiers achevé.");
 
-    // 4. Extraction du texte épuré par TreeWalker et reconstruction sémantique propre
-    for (let i = 0; i < htmlEntries.length; i++) {
-      const stepPercent = 20 + Math.floor((i / htmlEntries.length) * 65);
-      if (backdropStatus) backdropStatus.innerText = `Extraction du texte : Chapitre ${i + 1}/${htmlEntries.length}`;
-      if (backdropBar) backdropBar.style.width = `${stepPercent}%`;
+    let combinedHtml = "";
 
-      console.log(`[LOG] [Chapitre ${i + 1}/${htmlEntries.length}] Lecture binaire de : ${htmlEntries[i].name}`);
-      const rawContent = await htmlEntries[i].async('string');
+    // Colorisation et concaténation séquentielle de chaque chapitre
+    for (const entry of htmlEntries) {
+      const rawContent = await entry.async('string');
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(rawContent, 'text/html');
       
-      console.log(`   ➔ [Chapitre ${i + 1}] Taille de la chaîne lue : ${rawContent.length} caractères.`);
-      const internalParser = new DOMParser();
-      // MODIFICATION : Utilisation stricte du parseur XML pour l'EPUB
-      const virtualDoc = internalParser.parseFromString(rawContent, 'application/xhtml+xml');
+      applyAnnotationToDOM(doc.body, settings);
       
-      console.log(`   ➔ [Chapitre ${i + 1}] Parsing DOMParser réussi. Initialisation du TreeWalker textuel...`);
-      
-      // MODIFICATION : Ciblage sécurisé de la racine
-      const rootNode = virtualDoc.body || virtualDoc.documentElement;
+      combinedHtml += `<section class="pdf-chapter" style="page-break-after: always; break-after: page;">${doc.body.innerHTML}</section>`;
+    }
 
-      const walker = virtualDoc.createTreeWalker(
-        rootNode,
-        NodeFilter.SHOW_TEXT,
-        {
-          acceptNode: function(node) {
-            const parent = node.parentNode;
-            if (!parent) return NodeFilter.FILTER_REJECT;
-            const tag = parent.tagName.toUpperCase();
-            if (['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEXTAREA'].includes(tag)) return NodeFilter.FILTER_REJECT;
-            return node.nodeValue.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+    // Récupération des couleurs du thème actif
+    let bg, text, silentColor;
+    if (settings.theme === 'cream') {
+      bg = '#fdf6e3'; text = '#586e75'; silentColor = 'rgba(88,110,117,0.45)';
+    } else if (settings.theme === 'soft') {
+      bg = '#eef2f7'; text = '#2c3e50'; silentColor = 'rgba(44,62,80,0.45)';
+    } else if (settings.theme === 'dark') {
+      bg = '#1a1a1a'; text = '#e0e0e0'; silentColor = 'rgba(224,224,224,0.4)';
+    } else if (settings.theme === 'kavita') {
+      bg = '#F1E4D5'; text = '#111111'; silentColor = 'rgba(17,17,17,0.4)';
+    } else {
+      bg = '#ffffff'; text = '#111111'; silentColor = 'rgba(17,17,17,0.4)';
+    }
+
+    const font = settings.font;
+    const size = settings.fontSize + '%';
+    const height = (settings.lineHeight / 100);
+    const spacing = (settings.letterSpacing / 100) + 'em';
+
+    // Composition du document d'impression
+    const printDocumentHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>${title}</title>
+        <style>
+          @font-face {
+            font-family: 'Dyslexie';
+            src: url('/DysReader/assets/Fonts/dyslexie-regular.ttf') format('truetype');
           }
-        }
-      );
+          body {
+            font-family: ${font} !important;
+            font-size: ${size} !important;
+            line-height: ${height} !important;
+            letter-spacing: ${spacing} !important;
+            color: ${text} !important;
+            background-color: ${bg} !important;
+            padding: 40px !important;
+            max-width: ${settings.columnWidth}ch !important;
+            margin: 0 auto !important;
+          }
+          .syl-1 { color: ${settings.colorSyl1} !important; font-weight: 500; }
+          .syl-2 { color: ${settings.colorSyl2} !important; font-weight: 500; }
+          .digraph {
+            text-decoration: underline;
+            text-decoration-color: ${settings.colorDigraph};
+            text-decoration-thickness: 2px;
+          }
+          .silent { color: ${settings.colorSilent || silentColor} !important; opacity: 0.6; }
+          
+          @media print {
+            body, body * {
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            body {
+              background-color: ${bg} !important;
+              color: ${text} !important;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <h1 style="text-align: center; margin-top: 40px; margin-bottom: 60px; font-family: ${font};">${title}</h1>
+        ${combinedHtml}
+      </body>
+      </html>
+    `;
 
-      const chapterDiv = document.createElement('div');
-      chapterDiv.className = 'chapter-wrapper';
+    // Création d'une Iframe temporaire pour isoler l'impression
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'absolute';
+    iframe.style.width = '1px';
+    iframe.style.height = '1px';
+    iframe.style.opacity = '0';
+    iframe.style.pointerEvents = 'none';
+    document.body.appendChild(iframe);
 
-      let hasContent = false;
-      let nodeInChapterCount = 0;
+    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+    iframeDoc.open();
+    iframeDoc.write(printDocumentHtml);
+    iframeDoc.close();
 
-      while (walker.nextNode()) {
-        const textRaw = walker.currentNode.nodeValue.trim();
-        // MODIFICATION : Conservation des paragraphes courts
-        if (textRaw.length === 0) continue; 
+    // Lancement de l'imprimante virtuelle
+    iframe.contentWindow.focus();
+    
+    setTimeout(() => {
+      // 1. On écoute la fermeture de la fenêtre d'impression pour nettoyer
+      iframe.contentWindow.onafterprint = () => {
+        document.body.removeChild(iframe);
+        document.getElementById('pdfModal').classList.add('hidden');
+      };
 
-        hasContent = true;
-        nodeInChapterCount++;
+      // 2. On lance l'impression
+      try {
+        iframe.contentWindow.print();
         
-        const p = document.createElement('p');
-        // Traitement linguistique et césures Dyslexie actives
-        p.innerHTML = annotateText(textRaw, settings);
-        chapterDiv.appendChild(p);
-      }
-
-      console.log(`   ➔ [Chapitre ${i + 1}] Balayage terminé. Nœuds valides retenus et convertis en paragraphes : ${nodeInChapterCount}`);
-
-      if (hasContent) {
-        combinedContainer.appendChild(chapterDiv);
-      } else {
-        console.warn(`   ⚠️ [ATTENTION] Le fichier ${htmlEntries[i].name} n'a retourné aucun nœud textuel valide.`);
-      }
-    }
-
-    const totalParagraphsCreated = combinedContainer.querySelectorAll('p').length;
-    console.log(`[LOG] FIN DE LA PHASE D'EXTRACTION TEXTUELLE. Total de paragraphes <p> Dys générés : ${totalParagraphsCreated}`);
-
-    if (totalParagraphsCreated === 0) {
-      console.error("🛑 [ERREUR CRITIQUE] Aucun paragraphe n'a été extrait ! Le PDF final sera obligatoirement blanc.");
-      throw new Error("L'extraction textuelle de l'EPUB a retourné un document vide.");
-    }
-
-    if (backdropStatus) backdropStatus.innerText = "Calcul de la structure géométrique...";
-    if (backdropBar) backdropBar.style.width = "90%";
-
-    // ÉTAPE MAGIQUE : On force l'overlay blanc de chargement par-dessus notre conteneur pour masquer l'opération
-    console.log("[LOG] Forçage de priorité sur le backdrop de chargement...");
-    const backdropEl = document.getElementById('pdf-export-backdrop');
-    if (backdropEl) {
-      backdropEl.style.zIndex = '1000000'; // Toujours plus haut que le conteneur d'export (999999)
-      console.log("[LOG] Le zIndex du backdrop de chargement a été passé à 1000000.");
-    }
-
-    // Injection physique en premier niveau du DOM vivant
-    console.log("[LOG] Injection du conteneur d'exportation au sommet du DOM principal (body)...");
-    document.body.appendChild(combinedContainer);
-
-    // Mesures diagnostiques immédiates post-injection
-    console.log(`📏 [MESURE EN DIRECT] Dimensions réelles calculées par le DOM - Largeur : ${combinedContainer.clientWidth}px, Hauteur (scrollHeight) : ${combinedContainer.scrollHeight}px`);
-    if (combinedContainer.scrollHeight === 0) {
-      console.error("🛑 [ERREUR GEOMETRIQUE] Le navigateur calcule une hauteur de 0px pour le conteneur injecté ! Le PDF sera blanc.");
-    }
-
-    // Temporisation de rendu (800ms) pour forcer le rafraîchissement synchrone du moteur graphique
-    console.log("⏳ [LOG] Temporisation de 800ms pour forcer le Paint synchrone des glyphes...");
-    await new Promise(resolve => setTimeout(resolve, 800));
-
-    if (backdropStatus) backdropStatus.innerText = "Génération des pages du PDF...";
-    console.log("📸 [LOG] Déclenchement imminent de l'appel pdfDoc.html(). Activation du mode verbeux html2canvas.");
-
-    const pdfDoc = new window.jspdf.jsPDF({ orientation: 'p', unit: 'pt', format: 'a4' });
-
-    // 5. Capture directe du calque
-    await new Promise((resolve, reject) => {
-      pdfDoc.html(combinedContainer, {
-        x: 40,
-        y: 40,
-        width: 515,
-        windowWidth: 680,
-        autoPaging: 'text',
-        html2canvas: {
-          useCORS: true,
-          logging: true, // FORCE HTML2CANVAS À COUPLER TOUS SES LOGS INTERNES DANS TA CONSOLE (Erreurs de polices, images, etc.)
-          scale: 1,
-          backgroundColor: '#ffffff'
-        },
-        callback: function (doc) {
-          try {
-            console.log("[LOG] Callback jsPDF déclenché. Rendu terminé. Tentative d'écriture binaire du fichier...");
-            if (backdropStatus) backdropStatus.innerText = "Sauvegarde du fichier...";
-            if (backdropBar) backdropBar.style.width = "95%";
-            doc.save(`${title}_DysReader.pdf`);
-            console.log("✅ [LOG] doc.save() exécuté avec succès. Le fichier est transmis au navigateur.");
-            resolve();
-          } catch (e) {
-            console.error("❌ [ERREUR DANS LE CALLBACK] Échec de la sauvegarde finale du PDF :", e);
-            reject(e);
+        // Sécurité pour certains navigateurs (comme Safari) qui ne déclenchent pas bien onafterprint
+        setTimeout(() => {
+          if (document.body.contains(iframe)) {
+             document.getElementById('pdfModal').classList.add('hidden');
           }
-        }
-      });
-    });
-
-    console.log("[LOG] Début du nettoyage : Retrait du conteneur parent du DOM...");
-    document.body.removeChild(combinedContainer);
-    console.log("[LOG] Nettoyage DOM achevé.");
+        }, 3000);
+      } catch (printErr) {
+        console.error("Impression bloquée par le navigateur", printErr);
+        document.body.removeChild(iframe);
+      }
+      
+    }, 2000); // On laisse 2 secondes entières au navigateur pour dessiner le HTML colorisé
 
   } catch (err) {
-    console.error("❌ [ECHEC EXECUTIF GLOBAL] Une exception majeure a coupé l'exportation :", err);
-  } finally {
-    console.log("[LOG] Restauration des styles et verrous de l'application hôte...");
-    document.documentElement.style.overflow = originalHtmlOverflow;
-    document.documentElement.style.height = originalHtmlHeight;
-    document.body.style.overflow = originalBodyOverflow;
-    document.body.style.height = originalBodyHeight;
-    console.log("██████████ 🔍 [END EXTRACTOR DEBUG] ██████████");
+    console.error("Échec de la conversion en PDF", err);
+    alert("Erreur lors de la génération du document PDF.");
   }
 }
 

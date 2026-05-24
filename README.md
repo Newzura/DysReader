@@ -2,6 +2,10 @@
 
 **DysReader** est un lecteur d'EPUB statique, gratuit et 100 % exécuté côté client, conçu pour offrir des aides visuelles et cognitives avancées aux personnes dyslexiques ou en situation de fatigue visuelle.
 
+<div align="center">
+  <img src="./assets/previews/preview1.png" alt="Aperçu de l'interface DysReader" width="800">
+</div>
+
 ---
 
 ## 🚀 Accéder à l'application (Utilisation Immédiate)
@@ -40,9 +44,10 @@
 
 ## 🚀 Fonctionnalités en cours d'intégration (WIP)
 
-### 📄 Convertisseur EPUB vers PDF Dys (Haute-Fidélité)
-Le format EPUB colorisé n'étant pas pris en charge par les liseuses tierces (Kindle, Apple Books, Kobo), nous intégrons actuellement un **compilateur PDF local** directement sur la page d'accueil.
-* **Le concept :** Un bouton dédié permettra de sélectionner un livre (de votre bibliothèque ou de votre disque dur) pour fusionner l'intégralité de ses chapitres, lui appliquer vos styles DYS actifs (polices, interlignes, couleurs de syllabes) et l'exporter sous la forme d'un document PDF imprimable ou enregistrable de grande fidélité.
+### 📄 Convertisseur EPUB vers PDF Dys (⚠️ Expérimental / Désactivé)
+Le format EPUB colorisé n'étant pas pris en charge par les liseuses tierces (Kindle, Apple Books, Kobo), nous travaillons sur un **compilateur PDF local** directement depuis la page d'accueil.
+* **État actuel :** Cette fonctionnalité est **actuellement instable et désactivée** dans l'interface en raison de bugs de rendu (génération de pages blanches ou sauts de chapitres). Elle est en cours de correction.
+* **Le concept prévu :** Permettre de sélectionner un livre pour fusionner ses chapitres, lui appliquer vos styles DYS actifs (polices, interlignes, couleurs) et l'exporter en PDF haute-fidélité.
 
 ---
 
