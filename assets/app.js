@@ -204,8 +204,18 @@ function loadBookShelf() {
       
       const titleSpan = document.createElement("span");
       titleSpan.className = "shelf-item-title";
-      titleSpan.textContent = record.title || record.name;
-      titleSpan.title = record.title || record.name;
+      
+      // Sécurité : on prend le titre et on vire l'extension ".epub" ou ".EPUB" si elle traîne
+      let cleanTitle = record.title || record.name;
+      cleanTitle = cleanTitle.replace(/\.epub$/i, '');
+      
+      // Correctif d'affichage en direct si le livre d'exemple est stocké sans son auteur
+      if (record.id === "petit_prince_demo_999" && !cleanTitle.includes("-")) {
+        cleanTitle = "Le Petit Prince - Antoine de Saint-Exupéry";
+      }
+      
+      titleSpan.textContent = cleanTitle;
+      titleSpan.title = cleanTitle;
       titleSpan.addEventListener("click", () => loadLocalBook(record.id));
       
       const delBtn = document.createElement("button");
@@ -1127,6 +1137,10 @@ function switchView(viewName) {
     reader.classList.add('hidden');
     document.body.className = "view-library";
     stopSpeech();
+    
+    // Sécurité : Supprime les styles injectés en ligne par le lecteur pour restaurer ton CSS d'origine
+    document.documentElement.style.removeProperty('--bg-color');
+    document.body.style.backgroundColor = '';
   } else {
     lib.classList.add('hidden');
     reader.classList.remove('hidden');
@@ -1557,8 +1571,14 @@ function applyAllSettings() {
     bg = '#ffffff'; text = '#111111';
   }
 
-  document.documentElement.style.setProperty('--bg-color', bg);
-  document.body.style.backgroundColor = bg;
+  // Sécurité : On modifie le fond global uniquement si l'utilisateur est dans le lecteur
+  if (document.body.classList.contains('view-reader')) {
+    document.documentElement.style.setProperty('--bg-color', bg);
+    document.body.style.backgroundColor = bg;
+  } else {
+    document.documentElement.style.removeProperty('--bg-color');
+    document.body.style.backgroundColor = '';
+  }
 
   const shell = document.querySelector('.viewer-shell');
   if (shell) shell.style.backgroundColor = bg;
@@ -2292,10 +2312,43 @@ function startDysReaderApp() {
   console.log("🚀 [DysReader] Démarrage de l'application...");
   loadSettings();
   initIndexedDB()
-    .then((databaseInstance) => {
+    .then(async (databaseInstance) => {
       if (databaseInstance) {
         console.log("💾 [DysReader] Stockage IndexedDB prêt.");
-        loadBookShelf();
+        
+        // --- Injection automatique du livre d'exemple ---
+        try {
+          const transaction = databaseInstance.transaction(["books"], "readonly");
+          const store = transaction.objectStore("books");
+          const countRequest = store.count();
+          
+          countRequest.onsuccess = async () => {
+            if (countRequest.result === 0) {
+              console.log("📚 Bibliothèque vide. Pré-chargement du Petit Prince...");
+              
+              // On va chercher le fichier dans ton dossier previews
+              const response = await fetch('./assets/previews/Le-Petit-Prince.epub');
+              if (response.ok) {
+                const arrayBuffer = await response.arrayBuffer();
+                const defaultId = "petit_prince_demo_999";
+                
+                // On fixe le titre de l'exemple de manière 100% stable
+                const titleToSave = "Le Petit Prince - Antoine de Saint-Exupéry";
+                
+                // Enregistrement propre direct dans IndexedDB
+                await saveBookToLocalDb(defaultId, "Le-Petit-Prince.epub", titleToSave, arrayBuffer);
+                console.log("✨ Le Petit Prince a été ajouté avec succès à la bibliothèque locale !");
+                loadBookShelf();
+              }
+            } else {
+              loadBookShelf();
+            }
+          };
+        } catch (e) {
+          console.warn("Impossible de pré-charger le livre d'exemple :", e);
+          loadBookShelf();
+        }
+        // --------------------------------------------------
       }
       console.log("⚙️ [DysReader] Initialisation de l'interface...");
       initUI();
