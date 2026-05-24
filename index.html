@@ -22,6 +22,34 @@
       height: 0 !important;
       pointer-events: none !important;
     }
+
+    /* Optimisation pour les écrans de smartphones (Android/iOS) */
+    @media (max-width: 600px) {
+      .library-container {
+        padding: 8px !important; /* Réduit les marges globales forcées sur les côtés */
+      }
+      .library-header {
+        gap: 8px !important;
+        padding: 10px 4px !important;
+      }
+      .library-brand h1 {
+        font-size: 1.2rem !important; /* Réduit un peu le titre DysReader */
+      }
+      /* On rend les boutons plus compacts en enlevant du padding et en baissant la police */
+      .library-header .btn {
+        padding: 6px 10px !important;
+        font-size: 0.8rem !important;
+        letter-spacing: 0 !important;
+      }
+      .library-header .icon-btn {
+        padding: 6px !important;
+        font-size: 0.9rem !important;
+      }
+      /* Ajustement de la zone des boutons pour qu'ils se serrent si besoin */
+      .library-header div[style*="display: flex"] {
+        gap: 6px !important;
+      }
+    }
   </style>
 </head>
 <body class="view-library">
@@ -38,7 +66,7 @@
        </div>
        
        <div style="display: flex; align-items: center; gap: 12px;">
-         <button type="button" class="btn" onclick="document.getElementById('aboutModal').showModal()" style="cursor: pointer;">
+         <button type="button" class="btn" onclick="const m = document.getElementById('aboutModal'); m.showModal(); m.scrollTop = 0;" style="cursor: pointer;">
            ❓ À propos
          </button>
          <a href="https://github.com/Newzura/DysReader" target="_blank" rel="noopener noreferrer" class="btn" style="text-decoration: none;" title="Voir le code source">
@@ -301,7 +329,7 @@
   <script type="module" src="https://cdn.jsdelivr.net/npm/foliate-js@1.0.1/view.js"></script>
   <script type="module" src="./assets/app.js"></script>
 
-  <dialog id="aboutModal" style="border: 1px solid var(--border-color, rgba(255,255,255,0.1)); border-radius: 12px; padding: 24px; max-width: 500px; background: #1e1e1e; color: #fff; box-shadow: 0 10px 40px rgba(0,0,0,0.5); font-family: system-ui, -apple-system, sans-serif; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); margin: 0;">
+  <dialog id="aboutModal" style="border: 1px solid var(--border-color, rgba(255,255,255,0.1)); border-radius: 12px; padding: 20px; width: calc(100% - 32px); max-width: 500px; max-height: 85vh; overflow-y: auto; background: #1e1e1e; color: #fff; box-shadow: 0 10px 40px rgba(0,0,0,0.5); font-family: system-ui, -apple-system, sans-serif; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); margin: 0;">
     <h2 style="margin-top: 0; font-size: 1.3rem; color: #fff; padding-bottom: 8px;">✨ Bienvenue sur DysReader !</h2>
     
     <p style="line-height: 1.6; opacity: 0.9; font-size: 0.95rem; margin-top: 10px;">
