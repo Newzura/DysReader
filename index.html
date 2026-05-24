@@ -38,6 +38,9 @@
        </div>
        
        <div style="display: flex; align-items: center; gap: 12px;">
+         <button type="button" class="btn" onclick="document.getElementById('aboutModal').showModal()" style="cursor: pointer;">
+           ❓ À propos
+         </button>
          <a href="https://github.com/Newzura/DysReader" target="_blank" rel="noopener noreferrer" class="btn" style="text-decoration: none;" title="Voir le code source">
            ⭐ GitHub
          </a>
@@ -297,5 +300,36 @@
   
   <script type="module" src="https://cdn.jsdelivr.net/npm/foliate-js@1.0.1/view.js"></script>
   <script type="module" src="./assets/app.js"></script>
+
+  <dialog id="aboutModal" style="border: 1px solid var(--border-color, rgba(255,255,255,0.1)); border-radius: 12px; padding: 24px; max-width: 500px; background: #1e1e1e; color: #fff; box-shadow: 0 10px 40px rgba(0,0,0,0.5); font-family: system-ui, -apple-system, sans-serif; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); margin: 0;">
+    <h2 style="margin-top: 0; font-size: 1.3rem; color: #fff; padding-bottom: 8px;">✨ Bienvenue sur DysReader !</h2>
+    
+    <p style="line-height: 1.6; opacity: 0.9; font-size: 0.95rem; margin-top: 10px;">
+      J'ai créé cet espace pour redonner le plaisir de lire sans effort. Que ce soit pour surmonter une <strong>dyslexie</strong> ou simplement pour soulager vos yeux après une longue journée sur les écrans, tout est pensé pour votre confort.
+    </p>
+
+    <h3 style="font-size: 1.05rem; margin-top: 20px; margin-bottom: 8px; color: #60a5fa;">🌸 Ce que vous pouvez faire ici :</h3>
+    <ul style="margin: 0; padding-left: 20px; font-size: 0.9rem; line-height: 1.6; opacity: 0.9; list-style-type: '⚡ ';">
+      <li style="margin-bottom: 6px;"><strong>Lecture sur-mesure :</strong> Colorez les syllabes pour mieux découper les mots, mettez en avant les sons complexes et donnez moins d'importance aux lettres muettes.</li>
+      <li style="margin-bottom: 6px;"><strong>Option Audio :</strong> Vous pouvez activer une synthèse vocale pour écouter le texte et reposer vos yeux (c'est encore en phase de test, donc le rendu dépend beaucoup de votre appareil !).</li>
+      <li style="margin-bottom: 6px;"><strong>Polices et outils magiques :</strong> Activez des polices d'écriture hyper confortables (comme OpenDyslexic ou Lexend) et utilisez une règle de lecture pour ne jamais perdre le fil.</li>
+      <li style="margin-bottom: 6px;"><strong>Lecture classique :</strong> Toutes ces options sont désactivables en un clic pour retrouver une liseuse standard très épurée.</li>
+    </ul>
+
+    <p style="line-height: 1.6; opacity: 0.7; font-size: 0.85rem; margin-top: 22px; font-style: italic; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 12px;">
+      🔒 Vos livres restent strictement confidentiels et stockés sur votre appareil. C'est 100% gratuit, sans pub, et créé avec beaucoup de soin.
+    </p>
+
+    <div style="text-align: right; margin-top: 15px;">
+      <button onclick="document.getElementById('aboutModal').close()" class="btn" style="cursor: pointer; padding: 8px 16px;">C'est parti !</button>
+    </div>
+  </dialog>
+
+  <style>
+    #aboutModal::backdrop {
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(3px);
+    }
+  </style>
 </body>
 </html>
