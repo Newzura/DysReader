@@ -2326,8 +2326,7 @@ function startDysReaderApp() {
             if (countRequest.result === 0) {
               console.log("📚 Bibliothèque vide. Pré-chargement du Petit Prince...");
               
-              // On va chercher le fichier dans ton dossier previews
-              const response = await fetch('./assets/previews/Le-Petit-Prince.epub');
+              const response = await fetch('./Le-Petit-Prince.epub');
               if (response.ok) {
                 const arrayBuffer = await response.arrayBuffer();
                 const defaultId = "petit_prince_demo_999";
