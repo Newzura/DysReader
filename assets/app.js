@@ -28,7 +28,9 @@ let view = null;
 let currentBookId = null;
 let activeDocument = null; 
 let activeBody = null;     
-let isBookInitializing = false; // Bouclier de sécurité anti-écrasement pour le marque-page     
+let isBookInitializing = false; // Bouclier de sécurité anti-écrasement pour le marque-page
+let voiceRecognition = null;    // Instance de reconnaissance vocale
+let isVoiceCommandActive = false; // État d'activation du micro     
 
 // --- GESTION DU RECHARGEMENT DES PRÉFÉRENCES ---
 function loadSettings() {
@@ -50,24 +52,25 @@ function saveSettings() {
   }
 }
 
-// --- GESTION DE LA SYNTHÈSE VOCALE (TTS NEURAL + SYSTEM) ---
-let synth = window.speechSynthesis;
+// --- GESTION DE LA SYNTHÈSE VOCALE (REPLI SYSTÈME SÉCURISÉ, STRUCTURÉ & RESPIRANT) ---
 let ttsElements = [];
 let currentTtsIndex = 0;
 let isSpeaking = false;
 let selectedVoiceName = null;
 
-// Variables pour le moteur Supertonic 3
+// Gestion des segments du paragraphe actif (Anti-bug de superposition et de vitesse sur Mac)
+let ttsSegments = [];
+let currentSegmentIndex = 0;
+let currentAudioSource = null;  
+
+// Variables de secours conservées pour compatibilité
 let ttsInstance = null;
 let ttsIsLoading = false;
-let currentAudioSource = null;  // Source AudioBuffer pour l'API Web Audio
-let currentAudioContext = null; // Contexte de lecture audio en cours
-
-// Tampon de pré-génération asynchrone (Double Buffering)
+let currentAudioContext = null; 
 let pregeneratedAudio = null;
 let isPregenerating = false;
 
-// Liste des voix neurales de l'Iframe au format Supertonic 3
+// Liste des voix neurales de l'Iframe au format Supertonic 3 (conservée pour développements futurs)
 const SUPERTONIC_VOICES = [
   { id: "F2", name: "Sarah (Expressive, Féminine)", lang: "fr" },
   { id: "M3", name: "Daniel (Clair, Masculine)", lang: "fr" },
@@ -75,6 +78,461 @@ const SUPERTONIC_VOICES = [
   { id: "F3", name: "Aria (Douce, Féminine)", lang: "en" },
   { id: "M1", name: "Arthur (Claire, Masculine)", lang: "en" }
 ];
+
+// Nettoyeur et Normalisateur textuel anti-mots sautés (ITN)
+function normaliserTextePourTTS(text, lang) {
+  let t = text;
+  
+  // 1. Remplacer les apostrophes courbes par des apostrophes droites (vital pour le moteur phonétique)
+  t = t.replace(/[’‘]/g, "'");
+  
+  // 2. Supprimer les tirets invisibles de césure (soft hyphens \u00ad) qui cassent les mots pour l'IA
+  t = t.replace(/\u00ad/g, "");
+  t = t.replace(/\xa0/g, " "); // Espace insécable
+  
+  // 3. Normaliser les abréviations courantes
+  if (lang === "fr") {
+    t = t.replace(/\bM\./g, "Monsieur")
+         .replace(/\bMme\b/g, "Madame")
+         .replace(/\bDr\b/g, "Docteur")
+         .replace(/\betc\./g, "et cetera");
+    
+    // Conversion basique des chiffres de base (0-10) en toutes lettres pour aider l'IA
+    const chiffresFr = ["zéro", "un", "deux", "trois", "quatre", "cinq", "six", "sept", "huit", "neuf", "dix"];
+    t = t.replace(/\b([0-9]|10)\b/g, (m) => chiffresFr[parseInt(m, 10)] || m);
+  } else {
+    t = t.replace(/\bMr\./g, "Mister")
+         .replace(/\bMrs\./g, "Mistress")
+         .replace(/\bDr\./g, "Doctor")
+         .replace(/\betc\./g, "et cetera");
+    
+    const chiffresEn = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+    t = t.replace(/\b([0-9]|10)\b/g, (m) => chiffresEn[parseInt(m, 10)] || m);
+  }
+  
+  return t.trim();
+}
+
+// Découpe le paragraphe actif par dialogues et par ponctuation pour insérer des pauses de "respiration" naturelle
+function segmenterTexteAvecPauses(text) {
+  const segments = [];
+  
+  if (!text) return segments;
+
+  // 1. Découpage initial par dialogues (tiret cadratin ou guillemets)
+  const parts = text.split(/(—\s*[^—«»"]+|«[^»]+»|"[^"]+")/g);
+  
+  parts.forEach(part => {
+    const trimmedPart = part.trim();
+    if (!trimmedPart) return;
+
+    // Détermination du locuteur (principale vs secondaire)
+    const isDialogue = trimmedPart.startsWith('—') || trimmedPart.startsWith('«') || trimmedPart.startsWith('"');
+    const isMainSpeaking = isDialogue && /dis-je|répondis-je|demandai-je|s'exclamai-je/i.test(text);
+    const speaker = isMainSpeaking || !isDialogue ? 'main' : 'secondary';
+
+    // 2. Découpage plus fin par ponctuation pour insérer des pauses respiratoires (coupures entre les mots)
+    // On split par : . , ? ! ; : — tout en gardant les délimiteurs
+    const subParts = trimmedPart.split(/([,;:!?.]|—)/g);
+    
+    let currentText = "";
+    
+    subParts.forEach(sub => {
+      if (!sub) return;
+      
+      currentText += sub;
+      
+      // Si ce morceau est un signe de ponctuation, on valide le segment en cours avec sa pause dédiée
+      const symbol = sub.trim();
+      if ([',', ';', ':', '!', '?', '.', '—'].includes(symbol)) {
+        let pauseDuration = 250; // Pause par défaut en ms (virgules, double-points)
+        
+        if (symbol === '.' || symbol === '?' || symbol === '!') {
+          pauseDuration = 500; // Longue pause respiratoire de fin de phrase
+        } else if (symbol === ';' || symbol === ':') {
+          pauseDuration = 300; // Pause intermédiaire
+        } else if (symbol === '—') {
+          pauseDuration = 350; // Pause de réplique
+        }
+
+        segments.push({
+          text: currentText.trim(),
+          speaker: speaker,
+          pause: pauseDuration
+        });
+        currentText = "";
+      }
+    });
+    
+    // S'il reste du texte non ponctué à la fin du bloc
+    if (currentText.trim()) {
+      segments.push({
+        text: currentText.trim(),
+        speaker: speaker,
+        pause: 150 // Légère pause de fin de bloc
+      });
+    }
+  });
+
+  return segments.filter(s => s.text.length > 0);
+}
+
+// Détection du genre de la voix système
+function detecterGenreVoix(voice) {
+  if (!voice) return false; 
+  const name = voice.name.toLowerCase();
+  const maleKeywords = [
+    "guy", "ryan", "david", "henri", "claude", "thomas", "daniel", "nicolas", "albert", "paul", "georges", "bernard", "male", "homme"
+  ];
+  return maleKeywords.some(keyword => name.includes(keyword));
+}
+
+// Récupère le duo de voix (Principale et Secondaire) selon la langue et le genre choisi
+function obtenirVoixBilingues() {
+  const allVoices = window.speechSynthesis.getVoices();
+  const lang = settings.lang || "fr";
+  const genderSelect = document.getElementById('ttsNarratorGender');
+  const chosenGender = genderSelect ? genderSelect.value : "female";
+
+  let mainVoice = null;
+  let secondaryVoice = null;
+
+  if (lang === "en") {
+    // Anglais : Aria/Sonia (Femme HD), Guy/Ryan (Homme HD) [1.2.6]
+    const aria = allVoices.find(v => v.name.includes("Aria") || v.name.includes("Sonia"));
+    const guy = allVoices.find(v => v.name.includes("Guy") || v.name.includes("Ryan"));
+    
+    if (chosenGender === "female") {
+      mainVoice = aria || allVoices.find(v => v.lang.startsWith("en"));
+      secondaryVoice = guy || allVoices.find(v => v.lang.startsWith("en") && v !== mainVoice);
+    } else {
+      mainVoice = guy || allVoices.find(v => v.lang.startsWith("en"));
+      secondaryVoice = aria || allVoices.find(v => v.lang.startsWith("en") && v !== mainVoice);
+    }
+  } else {
+    // Français : Denise/Julie (Femme HD), Henri/Claude (Homme HD) [1.2.6]
+    const denise = allVoices.find(v => v.name.includes("Denise") || v.name.includes("Julie") || v.name.includes("Google français"));
+    const henri = allVoices.find(v => v.name.includes("Henri") || v.name.includes("Claude"));
+    
+    if (chosenGender === "female") {
+      mainVoice = denise || allVoices.find(v => v.lang.startsWith("fr"));
+      secondaryVoice = henri || allVoices.find(v => v.lang.startsWith("fr") && v !== mainVoice);
+    } else {
+      mainVoice = henri || allVoices.find(v => v.lang.startsWith("fr"));
+      secondaryVoice = denise || allVoices.find(v => v.lang.startsWith("fr") && v !== mainVoice);
+    }
+  }
+
+  return { main: mainVoice, secondary: secondaryVoice };
+}
+
+function initTTS() {
+  function populateVoices() {
+    const voiceSelect = document.getElementById('ttsVoice');
+    const dialogueSelect = document.getElementById('ttsVoiceDialogue');
+    if (!voiceSelect || !dialogueSelect) return;
+
+    voiceSelect.innerHTML = "";
+    dialogueSelect.innerHTML = '<option value="auto" selected>Opposé automatique 👤</option>';
+
+    const allVoices = window.speechSynthesis.getVoices();
+    const lang = settings.lang || "fr";
+
+    // On isole les voix correspondant à la langue active du livre
+    const filteredVoices = allVoices.filter(v => v.lang.startsWith(lang));
+
+    if (filteredVoices.length === 0) return;
+
+    // Remplissage des voix système standard
+    const systemGroup = document.createElement('optgroup');
+    systemGroup.label = "🔊 Voix Système Standard";
+    filteredVoices.forEach(v => {
+      const opt = document.createElement('option');
+      opt.value = v.name;
+      opt.textContent = `${v.name.replace("Apple ", "")}`;
+      systemGroup.appendChild(opt);
+    });
+    voiceSelect.appendChild(systemGroup);
+
+    const systemGroupDiag = document.createElement('optgroup');
+    systemGroupDiag.label = "🔊 Voix Système Standard";
+    filteredVoices.forEach(v => {
+      const opt = document.createElement('option');
+      opt.value = v.name;
+      opt.textContent = `${v.name.replace("Apple ", "")}`;
+      systemGroupDiag.appendChild(opt);
+    });
+    dialogueSelect.appendChild(systemGroupDiag);
+
+    // Sélection intelligente de démarrage pour éviter de tomber sur une mauvaise voix
+    const preferred = ["denise", "aria", "siri", "thomas", "amélie", "daniel", "julie", "aurelie", "nicolas", "audrey", "samantha"];
+    let defaultNarrator = null;
+    for (const pref of preferred) {
+      defaultNarrator = filteredVoices.find(v => v.name.toLowerCase().includes(pref));
+      if (defaultNarrator) break;
+    }
+    if (!defaultNarrator) defaultNarrator = filteredVoices[0];
+
+    if (defaultNarrator) {
+      voiceSelect.value = defaultNarrator.name;
+    }
+  }
+
+  populateVoices();
+
+  if (window.speechSynthesis) {
+    window.speechSynthesis.onvoiceschanged = () => {
+      populateVoices();
+    };
+  }
+
+  const ttsPlayBtn = document.getElementById('ttsPlay');
+  if (ttsPlayBtn) {
+    ttsPlayBtn.disabled = false;
+    ttsPlayBtn.style.opacity = "1";
+    ttsPlayBtn.style.cursor = "pointer";
+  }
+
+  document.getElementById('ttsPlay').addEventListener('click', startSpeech);
+  document.getElementById('ttsStop').addEventListener('click', stopSpeech);
+  
+  const rateEl = document.getElementById('ttsRate');
+  rateEl.addEventListener('input', (e) => {
+    document.getElementById('ttsRateValue').textContent = (e.target.value / 10).toFixed(1) + 'x';
+    if (isSpeaking) {
+      stopSpeech();
+      startSpeech();
+    }
+  });
+
+  const voiceSelect = document.getElementById('ttsVoice');
+  if (voiceSelect) {
+    voiceSelect.addEventListener('change', () => {
+      if (isSpeaking) {
+        stopSpeech();
+        startSpeech();
+      }
+    });
+  }
+
+  const dialogueSelect = document.getElementById('ttsVoiceDialogue');
+  if (dialogueSelect) {
+    dialogueSelect.addEventListener('change', () => {
+      if (isSpeaking) {
+        stopSpeech();
+        startSpeech();
+      }
+    });
+  }
+}
+
+// Détermine si un paragraphe est actuellement visible dans l'Iframe
+function isElementVisible(el) {
+  if (!el || !activeDocument) return false;
+  const rect = el.getBoundingClientRect();
+  const iframe = activeDocument.defaultView.frameElement;
+  if (!iframe) return false;
+
+  const viewportWidth = iframe.clientWidth || window.innerWidth;
+  const viewportHeight = iframe.clientHeight || window.innerHeight;
+  const isScrollMode = settings.mode === 'scrolled';
+
+  if (isScrollMode) {
+    return rect.top >= 0 && rect.top < viewportHeight - 10;
+  } else {
+    return rect.left >= -10 && rect.left < viewportWidth - 10;
+  }
+}
+
+// Extrait uniquement le texte visible sur l'écran actif de la liseuse
+function scanVisibleTtsElements() {
+  if (!activeDocument) return [];
+  const allElements = Array.from(activeDocument.querySelectorAll('p, li, h1, h2, h3'))
+    .filter(el => el.textContent.trim().length > 0);
+  return allElements.filter(isElementVisible);
+}
+
+function startSpeech() {
+  if (!view || !activeDocument) return;
+  stopSpeech();
+
+  ttsElements = scanVisibleTtsElements();
+  if (ttsElements.length === 0) {
+    view.next();
+    return;
+  }
+
+  currentTtsIndex = 0;
+  let bestTop = Infinity;
+  ttsElements.forEach((el, idx) => {
+    const rect = el.getBoundingClientRect();
+    if (settings.mode === 'scrolled') {
+      if (rect.top >= 0 && rect.top < bestTop) {
+        bestTop = rect.top;
+        currentTtsIndex = idx;
+      }
+    }
+  });
+
+  isSpeaking = true;
+  speakNextBlock();
+}
+
+async function speakNextBlock() {
+  if (!isSpeaking) return;
+
+  if (currentTtsIndex >= ttsElements.length) {
+    if (view) view.next();
+    else stopSpeech();
+    return;
+  }
+
+  const activeElement = ttsElements[currentTtsIndex];
+  const textToReadRaw = activeElement.textContent.trim();
+
+  if (!textToReadRaw) {
+    currentTtsIndex++;
+    speakNextBlock();
+    return;
+  }
+
+  const isScrollMode = settings.mode === 'scrolled';
+  if (!isScrollMode && !isElementVisible(activeElement)) {
+    if (view) {
+      view.next();
+      setTimeout(() => { if (isSpeaking) speakNextBlock(); }, 350);
+    } else {
+      stopSpeech();
+    }
+    return;
+  }
+
+  ttsElements.forEach(el => el.classList.remove('tts-reading-block'));
+  activeElement.classList.add('tts-reading-block');
+
+  if (isScrollMode) {
+    activeElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  const statusEl = document.getElementById('ttsStatus');
+  if (statusEl) {
+    statusEl.textContent = "⚠️ Synthèse vocale locale désactivée pour optimisation. Utilisation de la voix système.";
+    statusEl.className = "tts-status text-amber-500 font-semibold text-xs mt-2 text-center";
+  }
+
+  // Découpage du texte en segments de respiration (dialogues et ponctuation)
+  ttsSegments = segmenterTexteAvecPauses(textToReadRaw);
+  currentSegmentIndex = 0;
+
+  speakCurrentSegment();
+}
+
+// Fonction de génération et lecture séquentielle (Anti-bug de vitesse et de file d'attente sur Mac)
+function speakCurrentSegment() {
+  if (!isSpeaking) return;
+
+  // Si on a lu tous les morceaux du paragraphe actuel, on passe au paragraphe suivant
+  if (currentSegmentIndex >= ttsSegments.length) {
+    currentTtsIndex++;
+    speakNextBlock();
+    return;
+  }
+
+  const seg = ttsSegments[currentSegmentIndex];
+  
+  // Nettoyage et normalisation textuelle anti-sauts de mots
+  let cleanedText = normaliserTextePourTTS(seg.text, settings.lang);
+
+  if (!cleanedText) {
+    currentSegmentIndex++;
+    speakCurrentSegment();
+    return;
+  }
+
+  const utterance = new SpeechSynthesisUtterance(cleanedText);
+  const rateVal = document.getElementById('ttsRate').value;
+  
+  // On applique un coefficient de 0.88 pour compenser le débit accéléré de base des voix Mac/Safari
+  utterance.rate = (rateVal / 10) * 0.88;
+  utterance.lang = settings.lang === "en" ? "en-US" : "fr-FR";
+
+  const voiceNarratorName = document.getElementById('ttsVoice').value;
+  const voiceDialogueName = document.getElementById('ttsVoiceDialogue').value;
+  const allVoices = window.speechSynthesis.getVoices();
+
+  const narratorVoice = allVoices.find(v => v.name === voiceNarratorName) || allVoices[0];
+  let dialogueVoice = allVoices.find(v => v.name === voiceDialogueName);
+
+  // Logique d'opposition de genre s'il est configuré sur 'auto'
+  if (voiceDialogueName === 'auto') {
+    const lang = settings.lang || "fr";
+    const isNarratorMale = detecterGenreVoix(narratorVoice);
+    
+    if (lang === "en") {
+      dialogueVoice = isNarratorMale 
+        ? (allVoices.find(v => v.name.includes("Aria") || v.name.includes("Sonia") || v.name.includes("Zira")) || allVoices[0])
+        : (allVoices.find(v => v.name.includes("Guy") || v.name.includes("Ryan") || v.name.includes("David")) || allVoices[0]);
+    } else {
+      dialogueVoice = isNarratorMale 
+        ? (allVoices.find(v => v.name.includes("Denise") || v.name.includes("Julie") || v.name.includes("Amélie") || v.name.includes("Google français") || v.name.includes("Alice")) || allVoices[0])
+        : (allVoices.find(v => v.name.includes("Henri") || v.name.includes("Claude") || v.name.includes("Thomas")) || allVoices[0]);
+    }
+  }
+
+  // Attribution de la voix selon le type de segment (Narration vs Dialogue)
+  if (seg.speaker === 'main') {
+    utterance.voice = narratorVoice;
+  } else {
+    utterance.voice = dialogueVoice || narratorVoice;
+  }
+
+  // Ne lance le segment suivant QUE lorsque le segment actif est réellement terminé + Pause respiratoire
+  utterance.onend = () => {
+    currentAudioSource = null;
+    if (isSpeaking) {
+      currentSegmentIndex++;
+      
+      // Récupération de la pause programmée pour ce segment (commas, periods, etc.)
+      const pauseTime = seg.pause || 200;
+      
+      // Attente artificielle pour simuler le silence de respiration humaine
+      setTimeout(() => {
+        speakCurrentSegment();
+      }, pauseTime);
+    }
+  };
+
+  utterance.onerror = (err) => {
+    console.error("Speech Synthesis Error:", err);
+    stopSpeech();
+  };
+
+  currentAudioSource = utterance;
+  window.speechSynthesis.speak(utterance);
+}
+
+function stopSpeech() {
+  if (currentAudioSource) {
+    currentAudioSource = null;
+  }
+  if (window.speechSynthesis) {
+    window.speechSynthesis.cancel();
+  }
+  isSpeaking = false;
+  ttsElements.forEach(el => el.classList.remove('tts-reading-block'));
+  const playBtn = document.getElementById('ttsPlay');
+  if (playBtn) playBtn.textContent = "▶ Lire";
+  
+  const statusEl = document.getElementById('ttsStatus');
+  if (statusEl) {
+    statusEl.textContent = "Moteur local désactivé. Repli système.";
+    statusEl.className = "tts-status text-muted text-xs mt-2 text-center";
+  }
+}
+
+async function ensureKokoroLoaded() {
+  return Promise.resolve();
+}
 
 // --- STOCKAGE LOCAL (IndexedDB) ---
 const DB_NAME = "DysReaderLibraryDB";
@@ -193,6 +651,7 @@ function loadBookShelf() {
   const transaction = db.transaction(["books"], "readonly");
   const store = transaction.objectStore("books");
   const shelfContainer = document.getElementById("bookShelf");
+  if (!shelfContainer) return;
   shelfContainer.innerHTML = "";
 
   store.openCursor().onsuccess = (event) => {
@@ -652,10 +1111,15 @@ function injectIframeStyles(doc, opts, isIllustrationPage = false) {
     .silent { color: ${opts.colorSilent || silentColor} !important; opacity: 0.6; }
     
     ${opts.enableLineFocus ? `
-      p:hover, li:hover, h1:hover, h2:hover, h3:hover {
+      p:hover, li:hover {
         background-color: rgba(128, 128, 128, 0.08);
         border-left: 4px solid ${opts.colorSyl1};
         padding-left: 8px;
+        transition: all 0.15s ease;
+      }
+      h1:hover, h2:hover, h3:hover {
+        background-color: rgba(128, 128, 128, 0.08);
+        border-radius: 4px;
         transition: all 0.15s ease;
       }
     ` : ''}
@@ -670,440 +1134,6 @@ function injectIframeStyles(doc, opts, isIllustrationPage = false) {
   `;
 }
 
-// --- SYNTHÈSE VOCALE (Web Speech + Supertonic 3 TTS) ---
-
-// Initialisation asynchrone sécurisée de Supertonic via Transformers.js v3.8.1
-async function ensureKokoroLoaded() {
-  if (ttsInstance || ttsIsLoading) return;
-
-  const statusEl = document.getElementById('ttsStatus');
-  if (statusEl) {
-    statusEl.textContent = "⏳ Initialisation de la connexion...";
-    statusEl.className = "tts-status text-amber-500 font-semibold text-xs mt-2 text-center";
-  }
-
-  ttsIsLoading = true;
-  try {
-    // Import de la version 3.8.1 requise pour l'architecture de ce modèle
-    const { pipeline, env } = await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1");
-    
-    env.allowLocalModels = false;
-
-    // Chargement de la version ONNX optimisée pour le navigateur (compatible FR et EN)
-    ttsInstance = await pipeline('text-to-speech', 'onnx-community/Supertonic-TTS-2-ONNX', {
-      progress_callback: (data) => {
-        if (!statusEl) return;
-        
-        if (data.status === 'progress') {
-          const percent = Math.round(data.progress || 0);
-          const filename = data.file ? data.file.split('/').pop() : 'modèle';
-          statusEl.textContent = `⏳ Téléchargement : ${percent}% (${filename})`;
-          statusEl.className = "tts-status text-amber-500 font-semibold text-xs mt-2 text-center";
-        } 
-        else if (data.status === 'initiate') {
-          const filename = data.file ? data.file.split('/').pop() : '';
-          statusEl.textContent = `⏳ Connexion à Hugging Face : ${filename}...`;
-        } 
-        else if (data.status === 'done') {
-          statusEl.textContent = `💾 Fichier enregistré localement, finalisation...`;
-        } 
-        else if (data.status === 'ready') {
-          statusEl.textContent = `✨ Supertonic prêt (100% local, 44.1kHz) !`;
-          statusEl.className = "tts-status text-green-500 font-bold text-xs mt-2 text-center";
-        }
-      }
-    });
-
-    if (statusEl) {
-      statusEl.textContent = "✨ Supertonic prêt (100% local) !";
-      statusEl.className = "tts-status text-green-500 font-bold text-xs mt-2 text-center";
-    }
-  } catch (err) {
-    console.error("Échec de chargement de Supertonic, repli voix système", err);
-    if (statusEl) {
-      statusEl.textContent = "⚠️ Échec du modèle local. Bascule voix système.";
-      statusEl.className = "tts-status text-rose-500 font-bold text-xs mt-2 text-center";
-    }
-  } finally {
-    ttsIsLoading = false;
-  }
-}
-
-function initTTS() {
-  function populateVoices() {
-    const voiceSelect = document.getElementById('ttsVoice');
-    if (!voiceSelect) return;
-    voiceSelect.innerHTML = "";
-
-    // 1. Groupe des voix neurales locales (Premium Supertonic 3)
-    const premiumGroup = document.createElement('optgroup');
-    premiumGroup.label = "🌟 Premium (Neural Local)";
-    
-    SUPERTONIC_VOICES.forEach(v => {
-      const opt = document.createElement('option');
-      opt.value = v.id;
-      opt.textContent = `${v.name} [Supertonic 3]`;
-      if (v.id === "F2") opt.selected = true; // Sélection par défaut
-      premiumGroup.appendChild(opt);
-    });
-    voiceSelect.appendChild(premiumGroup);
-
-    // 2. Groupe des voix système classiques (Fallback)
-    if (synth) {
-      const systemGroup = document.createElement('optgroup');
-      systemGroup.label = "⚙️ Voix Système (Secours)";
-      
-      const voices = synth.getVoices();
-      let filteredVoices = voices.filter(v => v.lang.startsWith('fr') || v.lang.startsWith('en'));
-      
-      filteredVoices.forEach(voice => {
-        const opt = document.createElement('option');
-        opt.value = `system:${voice.name}`;
-        opt.textContent = `${voice.name} (${voice.lang})`;
-        systemGroup.appendChild(opt);
-      });
-      
-      if (filteredVoices.length > 0) {
-        voiceSelect.appendChild(systemGroup);
-      }
-    }
-
-    if (!selectedVoiceName) {
-      selectedVoiceName = "F2";
-    }
-  }
-
-  populateVoices();
-  if (synth && speechSynthesis.onvoiceschanged !== undefined) {
-    speechSynthesis.onvoiceschanged = populateVoices;
-  }
-
-  document.getElementById('ttsPlay').addEventListener('click', startSpeech);
-  document.getElementById('ttsStop').addEventListener('click', stopSpeech);
-  
-  document.getElementById('ttsVoice').addEventListener('change', (e) => {
-    selectedVoiceName = e.target.value;
-    if (!selectedVoiceName.startsWith('system:')) {
-      ensureKokoroLoaded();
-    }
-  });
-
-  const rateEl = document.getElementById('ttsRate');
-  rateEl.addEventListener('input', (e) => {
-    document.getElementById('ttsRateValue').textContent = (e.target.value / 10).toFixed(1) + 'x';
-    if (isSpeaking) {
-      stopSpeech();
-      startSpeech();
-    }
-  });
-}
-
-// Détermine si un paragraphe est actuellement visible dans l'Iframe (paginé horizontal vs vertical)
-function isElementVisible(el) {
-  if (!el || !activeDocument) return false;
-  const rect = el.getBoundingClientRect();
-  const iframe = activeDocument.defaultView.frameElement;
-  if (!iframe) return false;
-
-  const viewportWidth = iframe.clientWidth || window.innerWidth;
-  const viewportHeight = iframe.clientHeight || window.innerHeight;
-
-  const isScrollMode = settings.mode === 'scrolled';
-
-  if (isScrollMode) {
-    return rect.top >= 0 && rect.top < viewportHeight - 10;
-  } else {
-    return rect.left >= -10 && rect.left < viewportWidth - 10;
-  }
-}
-
-// Extrait uniquement le texte visible sur l'écran actif de la liseuse
-function scanVisibleTtsElements() {
-  if (!activeDocument) return [];
-  const allElements = Array.from(activeDocument.querySelectorAll('p, li, h1, h2, h3'))
-    .filter(el => el.textContent.trim().length > 0);
-  
-  return allElements.filter(isElementVisible);
-}
-
-function startSpeech() {
-  if (!view) {
-    console.warn("[Neural TTS] La liseuse n'est pas initialisée.");
-    return;
-  }
-  if (!activeDocument) {
-    console.warn("[Neural TTS] Aucun document actif n'est chargé.");
-    return;
-  }
-  stopSpeech();
-
-  // On extrait uniquement les phrases de la liseuse visibles à l'écran
-  ttsElements = scanVisibleTtsElements();
-  
-  if (ttsElements.length === 0) {
-    console.warn("[Neural TTS] Aucun texte visible trouvé sur cette page. Passage à la page suivante.");
-    view.next();
-    return;
-  }
-
-  currentTtsIndex = 0;
-  isSpeaking = true;
-
-  if (selectedVoiceName && !selectedVoiceName.startsWith('system:')) {
-    ensureKokoroLoaded().then(() => {
-      speakNextBlock();
-    });
-  } else {
-    speakNextBlock();
-  }
-}
-
-async function speakNextBlock() {
-  if (!isSpeaking) return;
-
-  // Si on a lu tous les éléments visibles de cette page : on tourne la page virtuelle
-  if (currentTtsIndex >= ttsElements.length) {
-    console.log("[Neural TTS] Fin de page. Chargement de la page suivante...");
-    if (view) {
-      view.next(); // Tourne la page (déclenchera l'événement 'relocate')
-    } else {
-      stopSpeech();
-    }
-    return;
-  }
-
-  const activeElement = ttsElements[currentTtsIndex];
-  const textToReadRaw = activeElement.textContent.trim();
-
-  if (!textToReadRaw) {
-    currentTtsIndex++;
-    speakNextBlock();
-    return;
-  }
-
-  const isScrollMode = settings.mode === 'scrolled';
-
-  // Si l'élément à lire est hors-écran (sur la page virtuelle suivante) : on tourne la page
-  if (!isScrollMode && !isElementVisible(activeElement)) {
-    console.log("[Neural TTS] Phrase sur la page virtuelle suivante. Rotation de la page...");
-    if (view) {
-      view.next(); // Tourne la page virtuelle
-      // On attend la transition de pagination (350ms) avant de re-tester et de synthétiser
-      setTimeout(() => {
-        if (isSpeaking) speakNextBlock();
-      }, 350);
-    } else {
-      stopSpeech();
-    }
-    return;
-  }
-
-  // Nettoyage visuel de l'ancien bloc et marquage du nouveau
-  ttsElements.forEach(el => el.classList.remove('tts-reading-block'));
-  activeElement.classList.add('tts-reading-block');
-
-  // En mode paginé horizontal, scrollIntoView est bloqué pour éviter de déformer ou décaler la liseuse
-  if (isScrollMode) {
-    activeElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }
-
-  const rateVal = document.getElementById('ttsRate').value;
-  const speed = rateVal / 10;
-
-  const useSupertonic = ttsInstance && selectedVoiceName && !selectedVoiceName.startsWith('system:');
-
-  if (useSupertonic) {
-    try {
-      // 1. Vérification si la phrase courante est déjà prête dans le tampon de pré-génération
-      if (pregeneratedAudio && pregeneratedAudio.index === currentTtsIndex) {
-        console.log(`[Supertonic 3] Lecture immédiate via tampon (Index ${currentTtsIndex})`);
-        const audioSamples = pregeneratedAudio.audio;
-        const sampleRate = pregeneratedAudio.sampling_rate;
-        pregeneratedAudio = null;
-
-        playRawFloat32Audio(audioSamples, sampleRate);
-
-        // Démarre instantanément la pré-génération en arrière-plan du paragraphe suivant (N+1)
-        pregenerateNextBlock(currentTtsIndex + 1, speed);
-      } 
-      else {
-        // 2. Si le tampon n'est pas prêt : calcul immédiat à la volée
-        const playBtn = document.getElementById('ttsPlay');
-        if (playBtn) playBtn.textContent = "⏳ Synthèse...";
-
-        const voiceId = selectedVoiceName || "F2";
-        const language = settings.lang || "fr";
-
-        // Assainissement textuel strict pour éliminer le mélange de mots (soft-hyphens, espaces insécables)
-        let cleanedText = textToReadRaw
-          .replace(/\u00ad/g, '')      // Supprime les soft-hyphens (Césures invisibles de mots)
-          .replace(/\xa0/g, ' ')       // Normalise les espaces insécables
-          .replace(/[\r\n]+/g, ' ')    // Retire les retours chariot
-          .replace(/[<>]/g, '')        // Supprime les caractères XML internes
-          .replace(/\s+/g, ' ')        // Enlève les espaces doubles
-          .trim();
-
-        const formattedText = `<${language}>${cleanedText}</${language}>`;
-
-        console.log(`[Supertonic 3] Synthèse locale à la volée : "${cleanedText.slice(0, 35)}..." (Voix: ${voiceId})`);
-
-        // Augmentation à 12 pas d'inférence (num_inference_steps) pour une précision de voix accrue
-        const result = await ttsInstance(formattedText, {
-          speaker_embeddings: `https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/main/voices/${voiceId}.bin`,
-          num_inference_steps: 12, // Qualité et précision naturelle supérieures (Précédemment à 5)
-          speed: speed
-        });
-
-        if (playBtn) playBtn.textContent = "▶ Lire";
-
-        if (!isSpeaking) return;
-
-        playRawFloat32Audio(result.audio, result.sampling_rate || 44100);
-        pregenerateNextBlock(currentTtsIndex + 1, speed);
-      }
-
-    } catch (err) {
-      console.error("Échec de synthèse Supertonic 3, repli système", err);
-      speakWithSystemSpeech(textToReadRaw, speed);
-    }
-  } else {
-    speakWithSystemSpeech(textToReadRaw, speed);
-  }
-}
-
-// Fonction de calcul en arrière-plan (Double Buffering) avec précision accrue (12 étapes)
-async function pregenerateNextBlock(nextIndex, speed) {
-  if (!isSpeaking || !ttsInstance) return;
-  if (nextIndex >= ttsElements.length) return; // Fin de page, rien à pré-générer
-
-  if (isPregenerating || (pregeneratedAudio && pregeneratedAudio.index === nextIndex)) return;
-
-  const nextElement = ttsElements[nextIndex];
-  const textToPregenerate = nextElement.textContent.trim();
-  if (!textToPregenerate) return;
-
-  isPregenerating = true;
-  try {
-    const voiceId = selectedVoiceName || "F2";
-    const language = settings.lang || "fr";
-
-    // Assainissement textuel pour le tampon de pré-génération ( soft hyphens )
-    let cleanedText = textToPregenerate
-      .replace(/\u00ad/g, '')
-      .replace(/\xa0/g, ' ')
-      .replace(/[\r\n]+/g, ' ')
-      .replace(/[<>]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    const formattedText = `<${language}>${cleanedText}</${language}>`;
-
-    console.log(`[Supertonic 3] [Buffer] Pré-génération silencieuse de l'index ${nextIndex}...`);
-
-    // Augmentation à 12 pas d'inférence (num_inference_steps) pour une précision accrue
-    const result = await ttsInstance(formattedText, {
-      speaker_embeddings: `https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/main/voices/${voiceId}.bin`,
-      num_inference_steps: 12, // Qualité et précision naturelle supérieures
-      speed: speed
-    });
-
-    // Enregistrement dans le tampon
-    pregeneratedAudio = {
-      index: nextIndex,
-      audio: result.audio,
-      sampling_rate: result.sampling_rate || 44100
-    };
-    console.log(`[Supertonic 3] [Buffer] Index ${nextIndex} mis en mémoire cache.`);
-  } catch (err) {
-    console.warn("[Supertonic 3] Échec de la pré-génération asynchrone", err);
-  } finally {
-    isPregenerating = false;
-  }
-}
-
-function playRawFloat32Audio(float32Array, sampleRate) {
-  try {
-    if (!currentAudioContext || currentAudioContext.state === 'closed') {
-      currentAudioContext = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    const buffer = currentAudioContext.createBuffer(1, float32Array.length, sampleRate);
-    buffer.copyToChannel(float32Array, 0);
-
-    const source = currentAudioContext.createBufferSource();
-    source.buffer = buffer;
-    source.connect(currentAudioContext.destination);
-
-    currentAudioSource = source;
-
-    source.onended = () => {
-      currentAudioSource = null;
-      if (isSpeaking) {
-        currentTtsIndex++;
-        speakNextBlock();
-      }
-    };
-
-    source.start();
-  } catch (e) {
-    console.error("Erreur de lecture Web Audio API", e);
-    currentTtsIndex++;
-    speakNextBlock();
-  }
-}
-
-function speakWithSystemSpeech(text, speed) {
-  if (!synth) {
-    stopSpeech();
-    return;
-  }
-  const utterance = new SpeechSynthesisUtterance(text);
-  
-  const voices = synth.getVoices();
-  const rawVoiceName = selectedVoiceName && selectedVoiceName.startsWith('system:') 
-    ? selectedVoiceName.replace('system:', '') 
-    : selectedVoiceName;
-
-  const voice = voices.find(v => v.name === rawVoiceName);
-  if (voice) utterance.voice = voice;
-  
-  utterance.rate = speed;
-
-  utterance.onend = () => {
-    currentTtsIndex++;
-    speakNextBlock();
-  };
-  utterance.onerror = () => stopSpeech();
-
-  synth.speak(utterance);
-}
-
-// Arrête toute lecture active et vide instantanément le tampon de pré-génération
-function stopSpeech() {
-  if (currentAudioSource) {
-    try { currentAudioSource.stop(); } catch (e) {}
-    currentAudioSource = null;
-  }
-  if (currentAudioContext) {
-    try { currentAudioContext.close(); } catch (e) {}
-    currentAudioContext = null;
-  }
-  
-  if (synth) {
-    synth.cancel();
-  }
-
-  isSpeaking = false;
-  
-  // Nettoyage complet des tâches asynchrones en cours et de la mémoire tampon
-  pregeneratedAudio = null;
-  isPregenerating = false;
-
-  ttsElements.forEach(el => el.classList.remove('tts-reading-block'));
-
-  const playBtn = document.getElementById('ttsPlay');
-  if (playBtn) playBtn.textContent = "▶ Lire";
-}
-
 // --- RÈGLE DE LECTURE ---
 function updateRulerState() {
   const ruler = document.getElementById('readingRuler');
@@ -1116,7 +1146,6 @@ function linkRulerToIframe() {
   const ruler = document.getElementById('readingRuler');
   if (!ruler) return;
 
-  // Récupération de l'Iframe parente via l'API DOM standard
   const iframe = activeDocument.defaultView.frameElement;
   if (!iframe) return;
 
@@ -1139,7 +1168,6 @@ function switchView(viewName) {
     document.body.className = "view-library";
     stopSpeech();
     
-    // Sécurité : Supprime les styles injectés en ligne par le lecteur pour restaurer ton CSS d'origine
     document.documentElement.style.removeProperty('--bg-color');
     document.body.style.backgroundColor = '';
   } else {
@@ -1186,14 +1214,11 @@ function showMenus() {
   
   if (!isAnyPanelOpen()) {
     menuTimeout = setTimeout(() => {
-      // On vérification dynamique si la souris survole activement le bandeau du haut ou du bas
       const isMouseOverInterface = (header && header.matches(':hover')) || (footer && footer.matches(':hover'));
       
       if (isMouseOverInterface) {
-        // La souris est toujours là : on réinitialise proprement le compteur de 6 secondes
         showMenus();
       } else {
-        // Personne sur l'interface : on peut masquer les menus en toute sécurité
         hideMenus();
       }
     }, 6000);
@@ -1219,17 +1244,12 @@ function toggleMenus() {
   }
 }
 
-// overlays / tiroirs
 function togglePanel(panelId) {
   const panels = ['panelSettings', 'panelToc', 'panelTts'];
   panels.forEach(id => {
     const p = document.getElementById(id);
     if (id === panelId) {
       p.classList.toggle('hidden');
-      // Précharger automatiquement le modèle asynchrone dès que l'onglet TTS s'ouvre
-      if (panelId === 'panelTts' && !p.classList.contains('hidden')) {
-        ensureKokoroLoaded();
-      }
     } else {
       p.classList.add('hidden');
     }
@@ -1468,6 +1488,9 @@ function initUI() {
   });
   const savedAppTheme = localStorage.getItem('dysreader_app_theme') || 'dark';
   document.documentElement.setAttribute('data-theme', savedAppTheme);
+
+  // Initialisation du module de commandes vocales
+  initVoiceCommands();
 }
 
 function updateSliderLabels() {
@@ -1561,8 +1584,12 @@ function applyAllSettings() {
 
   document.documentElement.style.setProperty('--column-width-css', `${settings.columnWidth}ch`);
   view.setAttribute('flow', settings.mode === 'scrolled' ? 'scrolled' : 'paginated');
-  view.setAttribute('max-inline-size', `${settings.columnWidth * 10}px`);
+  
+  // Correction géométrique : Forçage d'une string valide avec unité pour l'API Foliate
+  const maxInlineSizeValue = String(settings.columnWidth * 10) + 'px';
+  view.setAttribute('max-inline-size', maxInlineSizeValue);
   view.setAttribute('gap', '5%');
+  
   const isMobile = window.innerWidth <= 600;
   view.setAttribute('margin', isMobile ? '20px' : '60px');
 
@@ -1591,7 +1618,6 @@ function applyAllSettings() {
     bg = '#ffffff'; text = '#111111';
   }
 
-  // Sécurité : On modifie le fond global uniquement si l'utilisateur est dans le lecteur
   if (document.body.classList.contains('view-reader')) {
     document.documentElement.style.setProperty('--bg-color', bg);
     document.body.style.backgroundColor = bg;
@@ -1615,16 +1641,8 @@ function applyAllSettings() {
     applyAnnotationToDOM(activeBody, settings);
   }
 
-  if (view.renderer) {
-    view.renderer.setStyles?.({
-      'font-family': settings.font,
-      'font-size': `${settings.fontSize}%`,
-      'line-height': settings.lineHeight / 100,
-      'letter-spacing': `${settings.letterSpacing / 100}em`,
-      'color': text,
-      'background': bg 
-    });
-  }
+  // L'intégralité du rendu visuel et des thèmes de l'Iframe est désormais gérée 
+  // à 100% par injectIframeStyles et applyAnnotationToDOM.
 }
 
 // --- CHARGEMENT ---
@@ -1844,7 +1862,14 @@ async function loadBookFromArrayBuffer(arrayBuffer, filename, savedPosition = nu
 
     if (savedPosition) {
       console.log("📖 [DysReader] Navigation vers le marque-page sauvegardé...");
-      await view.goTo(savedPosition);
+      // Petite temporisation indispensable pour laisser le moteur Foliate et l'Iframe se stabiliser
+      setTimeout(async () => {
+        try {
+          await view.goTo(savedPosition);
+        } catch (goToErr) {
+          console.warn("Échec du positionnement initial sur le marque-page :", goToErr);
+        }
+      }, 150);
     } else {
       console.log("📖 [DysReader] Affichage de la première page du livre...");
       await view.next();
@@ -1965,6 +1990,227 @@ function updateLocationInfo(detail) {
   }
 }
 
+// --- MODULE DE COMMANDES VOCALES (INTEGRÉ AU PANNEAU AUDIO SANS ENCOMBREMENT) ---
+function initVoiceCommands() {
+  const panelBody = document.querySelector('#panelTts .panel-body');
+  if (!panelBody) {
+    console.warn("[Voice UI] Panneau audio (#panelTts .panel-body) introuvable pour le moment.");
+    return;
+  }
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const isFirefox = navigator.userAgent.toLowerCase().includes('firefox');
+  let isMutedForSystemSpeech = false;
+
+  const showVoicePopup = (message, isError = false) => {
+    let popup = document.getElementById('dys-voice-popup');
+    if (!popup) {
+      popup = document.createElement('div');
+      popup.id = 'dys-voice-popup';
+      Object.assign(popup.style, {
+        position: 'fixed',
+        bottom: '65px',
+        left: '20px',
+        padding: '8px 14px',
+        borderRadius: '8px',
+        fontSize: '0.8rem',
+        fontWeight: '700',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+        zIndex: '10005',
+        transition: 'all 0.2s ease',
+        opacity: '0',
+        transform: 'translateY(5px)',
+        pointerEvents: 'none',
+        fontFamily: 'var(--font-interface), sans-serif'
+      });
+      document.body.appendChild(popup);
+    }
+    
+    popup.style.backgroundColor = isError ? '#ef4444' : '#1e293b';
+    popup.style.color = '#ffffff';
+    popup.textContent = message;
+    
+    setTimeout(() => {
+      popup.style.opacity = '1';
+      popup.style.transform = 'translateY(0)';
+    }, 10);
+
+    clearTimeout(popup.timer);
+    popup.timer = setTimeout(() => {
+      popup.style.opacity = '0';
+      popup.style.transform = 'translateY(5px)';
+    }, 3000);
+  };
+
+  let voiceSection = document.getElementById('voiceSectionRow');
+  let micBtn;
+  
+  if (!voiceSection) {
+    console.log("🎙️ [Voice UI] Injection de la commande vocale dans le Panneau Audio.");
+    voiceSection = document.createElement('div');
+    voiceSection.id = 'voiceSectionRow';
+    voiceSection.className = 'control';
+    voiceSection.style.borderBottom = '1px solid var(--border-color)';
+    voiceSection.style.paddingBottom = '14px';
+    voiceSection.style.marginBottom = '10px';
+    voiceSection.innerHTML = `
+      <label style="font-size: 0.8rem; font-weight: 700; margin-bottom: 4px; display: block;">🎙️ Commande Vocale (Mains-libres)</label>
+      <button id="btnVoiceToggle" class="btn" type="button" style="width: 100%; justify-content: center; font-weight: 700; height: 38px;">🎤 Activer le micro</button>
+    `;
+    panelBody.insertBefore(voiceSection, panelBody.firstChild);
+    micBtn = document.getElementById('btnVoiceToggle');
+  } else {
+    micBtn = document.getElementById('btnVoiceToggle');
+    console.log("🔄 [Voice UI] Nettoyage des écouteurs d'événements Vite HMR.");
+    const cleanedBtn = micBtn.cloneNode(true);
+    micBtn.parentNode.replaceChild(cleanedBtn, micBtn);
+    micBtn = cleanedBtn;
+  }
+
+  if (!SpeechRecognition || isFirefox) {
+    micBtn.innerHTML = '❌ Non supporté sur ce navigateur';
+    micBtn.style.opacity = '0.5';
+    micBtn.style.cursor = 'pointer'; 
+    micBtn.style.backgroundColor = 'rgba(239, 68, 68, 0.1)';
+    micBtn.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+    micBtn.title = "La commande vocale n'est pas supportée sur Firefox.";
+  } else {
+    if (!isVoiceCommandActive) {
+      micBtn.innerHTML = '🎤 Activer le contrôle vocal';
+      micBtn.style.backgroundColor = '';
+      micBtn.style.borderColor = '';
+    }
+    micBtn.style.opacity = '1';
+    micBtn.style.cursor = 'pointer';
+    micBtn.title = "Contrôlez votre liseuse par la voix ('Suivant', 'Précédent', 'Réglages', 'Page')";
+  }
+
+  micBtn.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+
+    if (!SpeechRecognition || isFirefox) {
+      showVoicePopup("❌ Commande vocale indisponible sur Firefox (Utilisez Chrome ou Edge).", true);
+      return;
+    }
+
+    if (!voiceRecognition) {
+      voiceRecognition = new SpeechRecognition();
+      voiceRecognition.lang = settings.lang || 'fr';
+      voiceRecognition.continuous = false;
+      voiceRecognition.interimResults = false;
+
+      voiceRecognition.onstart = () => {
+        console.log("🟢 [Voice Moteur] Le micro est ouvert !");
+        if (!isMutedForSystemSpeech) {
+          showVoicePopup("🎤 Écoute active : Dites 'Suivant', 'Précédent', 'Réglages' ou 'Page'");
+        }
+      };
+
+      voiceRecognition.onresult = (event) => {
+        const transcript = event.results[event.resultIndex][0].transcript.toLowerCase().trim();
+        console.log("🗣️ [Voice Moteur] Mot intercepté :", transcript);
+
+        if (transcript.includes('suivant') || transcript.includes('suivante') || transcript.includes('tourne')) {
+          stopSpeech();
+          if (view) view.next();
+        } 
+        else if (transcript.includes('précédent') || transcript.includes('précédente') || transcript.includes('retour')) {
+          stopSpeech();
+          if (view) view.prev();
+        } 
+        else if (transcript.includes('réglage') || transcript.includes('reglage') || transcript.includes('paramètre') || transcript.includes('parametre') || transcript.includes('option')) {
+          showVoicePopup("⚙️ Ouverture des réglages...");
+          togglePanel('panelSettings');
+        } 
+        else if (transcript.includes('page') || transcript.includes('où suis') || transcript.includes('ou suis')) {
+          const locationInfo = document.getElementById('locationInfo');
+          const txtPage = locationInfo ? locationInfo.textContent.trim() : "";
+
+          if (txtPage && txtPage !== "-") {
+            showVoicePopup(`📍 ${txtPage}`);
+            
+            if (window.speechSynthesis) {
+              window.speechSynthesis.cancel();
+              const voiceAnswer = new SpeechSynthesisUtterance(txtPage.replace(/•/g, ', '));
+              voiceAnswer.lang = settings.lang || 'fr';
+              voiceAnswer.rate = 1.0;
+              
+              isMutedForSystemSpeech = true;
+              try { voiceRecognition.stop(); } catch(e) {}
+
+              voiceAnswer.onend = () => {
+                isMutedForSystemSpeech = false;
+                if (isVoiceCommandActive) {
+                  try { voiceRecognition.start(); } catch(e) {}
+                }
+              };
+              window.speechSynthesis.speak(voiceAnswer);
+            }
+          } else {
+            showVoicePopup("📍 Position introuvable ou en cours de calcul.", true);
+          }
+        }
+      };
+
+      voiceRecognition.onend = () => {
+        if (isVoiceCommandActive && !isMutedForSystemSpeech) {
+          try { voiceRecognition.start(); } catch(e) {}
+        }
+      };
+
+      voiceRecognition.onerror = (err) => {
+        console.warn("❌ [Voice Moteur] Erreur :", err.error);
+        if (err.error === 'not-allowed') {
+          showVoicePopup("🔒 Accès microphone bloqué dans vos permissions.", true);
+          resetVoiceUi();
+        } else if (err.error === 'network') {
+          resetVoiceUi(); 
+        }
+      };
+    }
+
+    if (!isVoiceCommandActive) {
+      isVoiceCommandActive = true;
+      micBtn.innerHTML = '🟢 Écoute en cours...';
+      micBtn.style.backgroundColor = '#22c55e';
+      micBtn.style.color = '#ffffff';
+      micBtn.style.borderColor = '#16a34a';
+      try {
+        voiceRecognition.start();
+      } catch (startErr) {
+        console.error("Échec démarrage micro :", startErr);
+      }
+    } else {
+      resetVoiceUi();
+      showVoicePopup("🎤 Contrôle vocal désactivé.");
+    }
+  });
+}
+
+function resetVoiceUi() {
+  isVoiceCommandActive = false;
+  if (voiceRecognition) {
+    try { voiceRecognition.stop(); } catch(e) {}
+  }
+  const btn = document.getElementById('btnVoiceToggle');
+  if (btn) {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const isFirefox = navigator.userAgent.toLowerCase().includes('firefox');
+    btn.style.color = '';
+    if (!SpeechRecognition || isFirefox) {
+      btn.innerHTML = '❌ Non supporté sur ce navigateur';
+      btn.style.opacity = '0.5';
+      btn.style.backgroundColor = 'rgba(239, 68, 68, 0.1)';
+      btn.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+    } else {
+      btn.innerHTML = '🎤 Activer le contrôle vocal';
+      btn.style.backgroundColor = '';
+      btn.style.borderColor = '';
+      btn.title = "Activer les commandes vocales ('Suivant' / 'Précédent' / 'Réglages' / 'Page')";
+    }
+  }
+}
+
 // Profil Import / Export
 function exportConfigurationJson() {
   const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(settings, null, 2));
@@ -1972,6 +2218,23 @@ function exportConfigurationJson() {
   downloadAnchor.setAttribute("href", dataStr);
   downloadAnchor.setAttribute("download", "dysreader_profil.json");
   downloadAnchor.click();
+}
+
+function importConfigurationJson(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function(evt) {
+    try {
+      const imported = JSON.parse(evt.target.result);
+      settings = { ...defaultSettings, ...imported };
+      syncSettingsToUI();
+    } catch (err) {
+      alert("Erreur de format.");
+    }
+  };
+  reader.readAsText(file);
 }
 
 // Remplit la liste déroulante du modal de conversion PDF avec les livres d'IndexedDB
@@ -1998,7 +2261,6 @@ function populatePdfModalSelect() {
 
 // Ouvre silencieusement le livre sous un masque de chargement opaque, puis déclenche l'exportation
 async function exportBookByOpeningItSilently(bookId) {
-  // 1. Création d'un écran de chargement de premier plan (z-index: 99999) pour masquer la liseuse
   const backdrop = document.createElement('div');
   backdrop.id = 'pdf-export-backdrop';
   backdrop.style.position = 'fixed';
@@ -2006,8 +2268,8 @@ async function exportBookByOpeningItSilently(bookId) {
   backdrop.style.left = '0';
   backdrop.style.width = '100vw';
   backdrop.style.height = '100vh';
-  backdrop.style.backgroundColor = '#ffffff'; // Blanc opaque
-  backdrop.style.zIndex = '99999'; // Au-dessus de tout le reste
+  backdrop.style.backgroundColor = '#ffffff'; 
+  backdrop.style.zIndex = '99999'; 
   backdrop.style.display = 'flex';
   backdrop.style.flexDirection = 'column';
   backdrop.style.alignItems = 'center';
@@ -2033,33 +2295,26 @@ async function exportBookByOpeningItSilently(bookId) {
   document.body.appendChild(backdrop);
 
   try {
-    // 2. On récupère le fichier depuis IndexedDB
     const record = await getBookFromLocalDb(bookId);
     if (!record) {
       throw new Error("Impossible de trouver le livre dans la base de données locale.");
     }
 
     currentBookId = bookId;
-    
-    // 3. On remet à zéro l'ancien document pour notre surveillance
     activeDocument = null;
 
-    // 4. On lance l'ouverture du livre (qui va instancier 'view' et déclencher le chargement de Foliate)
     await loadBookFromArrayBuffer(record.data, record.name, record.lastPosition);
 
-    // 5. On surveille activeDocument jusqu'à ce que l'écouteur principal de Foliate l'ait assigné
     const checkInterval = setInterval(async () => {
       if (activeDocument) {
-        clearInterval(checkInterval); // On arrête la surveillance immédiate
+        clearInterval(checkInterval); 
 
         try {
           backdropStatus.innerText = "Décompression du livre et application des styles Dys...";
           backdropBar.style.width = "20%";
           
-          // Lance la génération du PDF unique global
           await runSingleRenderPdfExport(record.data, record.title || record.name, backdropStatus, backdropBar);
           
-          // Nettoyage et retour automatique à la bibliothèque
           switchView('library');
           document.getElementById('pdfModal').classList.add('hidden');
         } catch (exportError) {
@@ -2068,7 +2323,7 @@ async function exportBookByOpeningItSilently(bookId) {
           if (backdrop) backdrop.remove();
         }
       }
-    }, 100); // Vérification toutes les 100ms
+    }, 100); 
 
   } catch (err) {
     console.error("Échec de la transition masquée :", err);
@@ -2080,30 +2335,19 @@ async function exportBookByOpeningItSilently(bookId) {
 // Effectue l'extraction, le formatage global de tous les chapitres et enregistre le PDF final
 async function runSingleRenderPdfExport(arrayBuffer, title, backdropStatus, backdropBar) {
   console.log("██████████ 🔍 [START EXTRACTOR DEBUG] ██████████");
-  console.log(`[LOG] Titre ciblé pour génération : "${title}"`);
-  console.log("[LOG] Analyse de l'état actuel des préférences Dys de lecture :", settings);
-
-  // 1. Sauvegarde des styles d'origine du Body et du document HTML
-  console.log("[LOG] Sauvegarde des contraintes de défilement d'origine de l'application hôte...");
   const originalHtmlOverflow = document.documentElement.style.overflow;
   const originalHtmlHeight = document.documentElement.style.height;
   const originalBodyOverflow = document.body.style.overflow;
   const originalBodyHeight = document.body.style.height;
-  console.log(`[LOG] Valeurs d'origine - HTML overflow: "${originalHtmlOverflow}", Body overflow: "${originalBodyOverflow}"`);
 
-  // 2. Déverrouillage temporaire de la hauteur du Body pour que html2canvas mesure tout le livre
-  console.log("[LOG] Déverrouillage forcé des contraintes 'height: 100vh' et 'overflow: hidden'...");
   document.documentElement.style.setProperty('overflow', 'visible', 'important');
   document.documentElement.style.setProperty('height', 'auto', 'important');
   document.body.style.setProperty('overflow', 'visible', 'important');
   document.body.style.setProperty('height', 'auto', 'important');
 
-  // 3. Création du conteneur de fusion (Ajusté au premier plan absolu)
-  console.log("[LOG] Instanciation du conteneur parent temporaire de fusion...");
   const combinedContainer = document.createElement('div');
   combinedContainer.id = 'combined-pdf-container';
   
-  // CONFIGURATION GÉOMÉTRIQUE STRICTE CONTRE LA TRICHERIE DU NAVIGATEUR :
   combinedContainer.style.position = 'fixed';
   combinedContainer.style.top = '0';
   combinedContainer.style.left = '0';
@@ -2111,9 +2355,8 @@ async function runSingleRenderPdfExport(arrayBuffer, title, backdropStatus, back
   combinedContainer.style.height = 'auto';
   combinedContainer.style.padding = '40px';
   combinedContainer.style.backgroundColor = '#ffffff';
-  combinedContainer.style.zIndex = '999999'; // Propulsé au premier plan pour forcer le Paint graphique du texte
+  combinedContainer.style.zIndex = '999999'; 
   combinedContainer.style.margin = '0 auto';
-  console.log("[LOG] Styles géométriques appliqués sur #combined-pdf-container. Attente d'injection.");
 
   const activeConfig = {
     font: settings.font,
@@ -2121,13 +2364,12 @@ async function runSingleRenderPdfExport(arrayBuffer, title, backdropStatus, back
     lineHeight: settings.lineHeight / 100,
     letterSpacing: settings.letterSpacing / 100 + 'em'
   };
-  console.log("[LOG] Configuration typographique calculée :", activeConfig);
 
   const styleEl = document.createElement('style');
   styleEl.innerHTML = `
     #combined-pdf-container, #combined-pdf-container * {
       box-sizing: border-box;
-      column-width: auto !important; /* Détruit les colonnes horizontales de foliate-js qui déportent le texte */
+      column-width: auto !important; 
       column-count: 1 !important;
       max-width: 100% !important;
     }
@@ -2172,10 +2414,8 @@ async function runSingleRenderPdfExport(arrayBuffer, title, backdropStatus, back
     .silent { color: ${settings.colorSilent} !important; opacity: 0.6 !important; display: inline !important; }
   `;
   combinedContainer.appendChild(styleEl);
-  console.log("[LOG] Balise <style> de forçage injectée dans le conteneur temporaire.");
 
   try {
-    console.log("[LOG] Décompression de l'ArrayBuffer du livre via JSZip...");
     const zip = await JSZip.loadAsync(arrayBuffer);
     const htmlEntries = [];
 
@@ -2185,27 +2425,16 @@ async function runSingleRenderPdfExport(arrayBuffer, title, backdropStatus, back
       }
     });
 
-    console.log(`[LOG] Scan ZIP achevé. Fichiers HTML/XHTML bruts détectés : ${htmlEntries.length}`);
     htmlEntries.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
-    console.log("[LOG] Tri numérique de l'ordre séquentiel des fichiers achevé.");
 
-    // 4. Extraction du texte épuré par TreeWalker et reconstruction sémantique propre
     for (let i = 0; i < htmlEntries.length; i++) {
       const stepPercent = 20 + Math.floor((i / htmlEntries.length) * 65);
       if (backdropStatus) backdropStatus.innerText = `Extraction du texte : Chapitre ${i + 1}/${htmlEntries.length}`;
       if (backdropBar) backdropBar.style.width = `${stepPercent}%`;
 
-      console.log(`[LOG] [Chapitre ${i + 1}/${htmlEntries.length}] Lecture binaire de : ${htmlEntries[i].name}`);
       const rawContent = await htmlEntries[i].async('string');
-      
-      console.log(`   ➔ [Chapitre ${i + 1}] Taille de la chaîne lue : ${rawContent.length} caractères.`);
       const internalParser = new DOMParser();
-      // MODIFICATION : Utilisation stricte du parseur XML pour l'EPUB
       const virtualDoc = internalParser.parseFromString(rawContent, 'application/xhtml+xml');
-      
-      console.log(`   ➔ [Chapitre ${i + 1}] Parsing DOMParser réussi. Initialisation du TreeWalker textuel...`);
-      
-      // MODIFICATION : Ciblage sécurisé de la racine
       const rootNode = virtualDoc.body || virtualDoc.documentElement;
 
       const walker = virtualDoc.createTreeWalker(
@@ -2226,70 +2455,40 @@ async function runSingleRenderPdfExport(arrayBuffer, title, backdropStatus, back
       chapterDiv.className = 'chapter-wrapper';
 
       let hasContent = false;
-      let nodeInChapterCount = 0;
-
       while (walker.nextNode()) {
         const textRaw = walker.currentNode.nodeValue.trim();
-        // MODIFICATION : Conservation des paragraphes courts
         if (textRaw.length === 0) continue; 
 
         hasContent = true;
-        nodeInChapterCount++;
-        
         const p = document.createElement('p');
-        // Traitement linguistique et césures Dyslexie actives
         p.innerHTML = annotateText(textRaw, settings);
         chapterDiv.appendChild(p);
       }
 
-      console.log(`   ➔ [Chapitre ${i + 1}] Balayage terminé. Nœuds valides retenus et convertis en paragraphes : ${nodeInChapterCount}`);
-
       if (hasContent) {
         combinedContainer.appendChild(chapterDiv);
-      } else {
-        console.warn(`   ⚠️ [ATTENTION] Le fichier ${htmlEntries[i].name} n'a retourné aucun nœud textuel valide.`);
       }
     }
 
     const totalParagraphsCreated = combinedContainer.querySelectorAll('p').length;
-    console.log(`[LOG] FIN DE LA PHASE D'EXTRACTION TEXTUELLE. Total de paragraphes <p> Dys générés : ${totalParagraphsCreated}`);
-
     if (totalParagraphsCreated === 0) {
-      console.error("🛑 [ERREUR CRITIQUE] Aucun paragraphe n'a été extrait ! Le PDF final sera obligatoirement blanc.");
       throw new Error("L'extraction textuelle de l'EPUB a retourné un document vide.");
     }
 
     if (backdropStatus) backdropStatus.innerText = "Calcul de la structure géométrique...";
     if (backdropBar) backdropBar.style.width = "90%";
 
-    // ÉTAPE MAGIQUE : On force l'overlay blanc de chargement par-dessus notre conteneur pour masquer l'opération
-    console.log("[LOG] Forçage de priorité sur le backdrop de chargement...");
     const backdropEl = document.getElementById('pdf-export-backdrop');
     if (backdropEl) {
-      backdropEl.style.zIndex = '1000000'; // Toujours plus haut que le conteneur d'export (999999)
-      console.log("[LOG] Le zIndex du backdrop de chargement a été passé à 1000000.");
+      backdropEl.style.zIndex = '1000000'; 
     }
 
-    // Injection physique en premier niveau du DOM vivant
-    console.log("[LOG] Injection du conteneur d'exportation au sommet du DOM principal (body)...");
     document.body.appendChild(combinedContainer);
-
-    // Mesures diagnostiques immédiates post-injection
-    console.log(`📏 [MESURE EN DIRECT] Dimensions réelles calculées par le DOM - Largeur : ${combinedContainer.clientWidth}px, Hauteur (scrollHeight) : ${combinedContainer.scrollHeight}px`);
-    if (combinedContainer.scrollHeight === 0) {
-      console.error("🛑 [ERREUR GEOMETRIQUE] Le navigateur calcule une hauteur de 0px pour le conteneur injecté ! Le PDF sera blanc.");
-    }
-
-    // Temporisation de rendu (800ms) pour forcer le rafraîchissement synchrone du moteur graphique
-    console.log("⏳ [LOG] Temporisation de 800ms pour forcer le Paint synchrone des glyphes...");
     await new Promise(resolve => setTimeout(resolve, 800));
 
     if (backdropStatus) backdropStatus.innerText = "Génération des pages du PDF...";
-    console.log("📸 [LOG] Déclenchement imminent de l'appel pdfDoc.html(). Activation du mode verbeux html2canvas.");
-
     const pdfDoc = new window.jspdf.jsPDF({ orientation: 'p', unit: 'pt', format: 'a4' });
 
-    // 5. Capture directe du calque
     await new Promise((resolve, reject) => {
       pdfDoc.html(combinedContainer, {
         x: 40,
@@ -2299,34 +2498,28 @@ async function runSingleRenderPdfExport(arrayBuffer, title, backdropStatus, back
         autoPaging: 'text',
         html2canvas: {
           useCORS: true,
-          logging: true, // FORCE HTML2CANVAS À COUPLER TOUS SES LOGS INTERNES DANS TA CONSOLE (Erreurs de polices, images, etc.)
+          logging: true, 
           scale: 1,
           backgroundColor: '#ffffff'
         },
         callback: function (doc) {
           try {
-            console.log("[LOG] Callback jsPDF déclenché. Rendu terminé. Tentative d'écriture binaire du fichier...");
             if (backdropStatus) backdropStatus.innerText = "Sauvegarde du fichier...";
             if (backdropBar) backdropBar.style.width = "95%";
             doc.save(`${title}_DysReader.pdf`);
-            console.log("✅ [LOG] doc.save() exécuté avec succès. Le fichier est transmis au navigateur.");
             resolve();
           } catch (e) {
-            console.error("❌ [ERREUR DANS LE CALLBACK] Échec de la sauvegarde finale du PDF :", e);
             reject(e);
           }
         }
       });
     });
 
-    console.log("[LOG] Début du nettoyage : Retrait du conteneur parent du DOM...");
     document.body.removeChild(combinedContainer);
-    console.log("[LOG] Nettoyage DOM achevé.");
 
   } catch (err) {
     console.error("❌ [ECHEC EXECUTIF GLOBAL] Une exception majeure a coupé l'exportation :", err);
   } finally {
-    console.log("[LOG] Restauration des styles et verrous de l'application hôte...");
     document.documentElement.style.overflow = originalHtmlOverflow;
     document.documentElement.style.height = originalHtmlHeight;
     document.body.style.overflow = originalBodyOverflow;
@@ -2385,23 +2578,6 @@ if (exportEpubBtn) {
   });
 }
 
-function importConfigurationJson(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-
-  const reader = new FileReader();
-  reader.onload = function(evt) {
-    try {
-      const imported = JSON.parse(evt.target.result);
-      settings = { ...defaultSettings, ...imported };
-      syncSettingsToUI();
-    } catch (err) {
-      alert("Erreur de format.");
-    }
-  };
-  reader.readAsText(file);
-}
-
 // --- DÉMARRAGE ET INITIALISATION SÉCURISÉE (VITE-FRIENDLY) ---
 function startDysReaderApp() {
   console.log("🚀 [DysReader] Démarrage de l'application...");
@@ -2429,7 +2605,6 @@ function startDysReaderApp() {
                 // On fixe le titre de l'exemple de manière 100% stable
                 const titleToSave = "Le Petit Prince - Antoine de Saint-Exupéry";
                 
-                // Enregistrement propre direct dans IndexedDB
                 await saveBookToLocalDb(defaultId, "Le-Petit-Prince.epub", titleToSave, arrayBuffer);
                 console.log("✨ Le Petit Prince a été ajouté avec succès à la bibliothèque locale !");
                 loadBookShelf();
@@ -2442,12 +2617,17 @@ function startDysReaderApp() {
           console.warn("Impossible de pré-charger le livre d'exemple :", e);
           loadBookShelf();
         }
-        // --------------------------------------------------
       }
       console.log("⚙️ [DysReader] Initialisation de l'interface...");
       initUI();
       console.log("📂 [DysReader] Zone de dépôt de fichiers active.");
       initFileLoader();
+      
+      try {
+        initVoiceCommands();
+      } catch (voiceErr) {
+        console.error("❌ Échec de l'initialisation vocale :", voiceErr);
+      }
     })
     .catch((err) => {
       console.error("❌ [DysReader] Échec IndexedDB, lancement en mode mémoire directe :", err);

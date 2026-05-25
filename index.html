@@ -261,9 +261,10 @@
       <div id="toc" class="panel-body toc-list"></div>
     </div>
 
+    <!-- Panneau de Synthèse Vocale 100% Libre & Local (Supertonic-3 90 Mo) -->
     <div id="panelTts" class="floating-panel hidden">
       <div class="panel-header">
-        <h3>Synthèse Vocale (Neural Local)</h3>
+        <h3>Synthèse Vocale (Livre Audio HD)</h3>
         <button class="close-panel-btn" data-close="panelTts">✕</button>
       </div>
       <div class="panel-body">
@@ -272,15 +273,23 @@
           <button id="ttsStop" class="btn flex-1" type="button">■ Arrêter</button>
         </div>
         
-        <div id="ttsStatus" class="tts-status text-muted font-medium text-xs mt-1 text-center" style="color: var(--text-muted); font-size: 0.75rem;">
-          Modèle neural non chargé (S'initialise à l'ouverture)
+         <div id="ttsStatus" class="tts-status text-muted text-xs mt-2 text-center">
+           Moteur Supertonic-3 inactif.
         </div>
 
         <div class="control" style="margin-top:12px;">
-          <label for="ttsVoice">Voix</label>
+          <label for="ttsVoice">Voix du Narrateur (le 'Je')</label>
           <select id="ttsVoice" style="width:100%;"></select>
         </div>
-        <div class="control">
+
+        <div class="control" style="margin-top:12px;">
+          <label for="ttsVoiceDialogue">Voix des Dialogues</label>
+          <select id="ttsVoiceDialogue" style="width:100%;">
+            <option value="auto" selected>Opposé automatique 👤</option>
+          </select>
+        </div>
+
+        <div class="control" style="margin-top:12px;">
           <label for="ttsRate">Vitesse de lecture <span id="ttsRateValue">1.0x</span></label>
           <input id="ttsRate" type="range" min="5" max="20" value="10">
         </div>
