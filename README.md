@@ -35,6 +35,9 @@
 * **Stabilisation des digrammes :** Soulignement visuel des sons complexes (ch, ph, ou, eau, etc.).
 * **Règle de lecture & Focus ligne :** Guides visuels translucides pour maintenir le fil de lecture sans saut de ligne.
 
+### 🎙️ Mode Mains-Libres (Commandes Vocales)
+* **Contrôle par la voix :** Activez le micro en un clic pour faire défiler vos pages (« Suivant », « Précédent ») ou afficher vos « Réglages » sans toucher l'écran.
+
 ### 🔊 Synthèse Vocale Neurale (100 % locale, hors-ligne)
 * **Qualité Studio (44.1 kHz) :** Intégration du modèle Supertonic 3 offrant une voix claire et naturelle, exempte de l'effet métallique des TTS légers classiques.
 * **Double Buffering (Expérimental) :** Un système de tampon asynchrone génère en tâche de fond la phrase suivante pendant que vous écoutez la phrase courante pour réduire le délai d'attente habituel de 3 secondes entre les paragraphes.
@@ -87,4 +90,8 @@ Pour cloner et lancer l'application en local sur votre machine avec un serveur d
 ## 📝 Suivi des modifications
 
 * [x] **Correction des problèmes d'affichage sur appareil portable** (Ajustement de l'en-tête immersif et des marges adaptatives de Foliate-JS).
-
+* [x] **Refonte complète de l'en-tête (Header) et du pied de page (Footer)** : Passage sur une structure en grille asymétrique (CSS Grid). Le titre et la pagination ne chevauchent plus jamais les boutons d'actions, peu importe la taille de l'écran.
+* [x] **Optimisation UI/UX pour smartphone** : Sur mobile, l'en-tête bascule automatiquement sur deux lignes (Row 1 : boutons de retour et de réglages, Row 2 : titre de l'œuvre sur toute la largeur) grâce aux CSS Grid Areas.
+* [x] **Résolution du bug de vitesse macOS** : Implémentation d'une machine à états séquentiels pour la synthèse vocale, empêchant les superpositions et accélérations incontrôlées sous Safari et Chrome Mac.
+* [x] **Liaison dual-voice & normalisation de texte** : Gestion des pauses respiratoires par la ponctuation, conversion des chiffres/abréviations en toutes lettres, et alternance automatique de voix pour les dialogues.
+* [x] **Intégration du mode mains-libres** (Contrôle et navigation de la liseuse par la voix).
